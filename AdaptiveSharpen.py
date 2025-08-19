@@ -83,6 +83,9 @@ def oklab2rgb(oklab):
     srgb = linear_to_srgb(linear)
     return np.clip(srgb, 0, 1)  # Ensure [0,1]
 
+def rgb2lum(rgb):
+    return 0.299 * rgb[:, :, 0] + 0.587 * rgb[:, :, 1] + 0.114 * rgb[:, :, 2]
+
 def std_windowed(img, win_size):
     win_h, win_w = win_size
     win_view = sliding_window_view(img, (win_h, win_w), axis=(0, 1))
@@ -96,7 +99,11 @@ def main():
     parser.add_argument('--debug', action='store_true', help='Enable debug output (saves contrast map)')
     parser.add_argument('--no_contrast', action='store_true', help='Apply fixed deconvolution strength without contrast adaptation')
     parser.add_argument('--oklab', action='store_true', help='Use OKlab instead of cielab deconvolution')
+    parser.add_argument('--rgb', action='store_true', help='Use RGB instead of cielab deconvolution')
     args = parser.parse_args()
+
+    if args.oklab & args.rgb:
+        raise ValueError("Cannot use both oklab and rgb")
 
     image = cv2.imread(args.input, cv2.IMREAD_UNCHANGED)
     # Convert BGR(A) to RGB(A)
@@ -129,8 +136,11 @@ def main():
         lab = rgb2oklab(rgb)
     else:
         lab = rgb2lab(rgb)
-    lum = lab[..., 0] / 100.0
-    is_color = len(rgb.shape) == 3 and rgb.shape[-1] == 3
+    if args.rgb:
+        lum = rgb2lum(rgb)
+    else:
+        lum = lab[..., 0] / 100.0
+    is_colour = len(rgb.shape) == 3 and rgb.shape[-1] == 3
 
     original_lum = lum.copy()
     bg = np.percentile(original_lum, 5)
@@ -181,12 +191,15 @@ def main():
         lab_sharp = lab.copy()
         ratio = lum_sharp / np.maximum(original_lum, 1e-12)
         ratio = np.clip(ratio, 0.5, 2.0)
-        lab_sharp[..., 0] = lum_sharp * 100.0
-        lab_sharp *= ratio[:, :, np.newaxis]
+        if not args.rgb:
+            lab_sharp[..., 0] = lum_sharp * 100.0
+            lab_sharp[..., 0] *= ratio
         if args.oklab:
-             rgb_sharp = oklab2rgb(lab_sharp)
+            rgb_sharp = oklab2rgb(lab_sharp)
+        elif args.rgb:
+            rgb_sharp = rgb * ratio[:, :, np.newaxis]
         else:
-             rgb_sharp = lab2rgb(lab_sharp)
+            rgb_sharp = lab2rgb(lab_sharp)
         return np.clip(rgb_sharp * 65535, 0, 65535).astype(np.uint16)
 
     if args.no_contrast:
@@ -201,7 +214,7 @@ def main():
             while True:
                 out_img = compute_sharpened(strength)
                 # Compute max brightness as percentage
-                if is_color:
+                if is_colour:
                     rgb_out = out_img.astype(np.float32) / 65535.0
                     lab_out = rgb2lab(rgb_out)
                     max_brightness = np.max(lab_out[..., 0])
@@ -221,7 +234,7 @@ def main():
             out_img = compute_sharpened(args.max_strength)
             print(f"Used max_strength: {args.max_strength}")
 
-    if not is_color:
+    if not is_colour:
         out_img = out_img[:, :, 0]
 
     # Convert all transparent pixels to black if alpha exists
