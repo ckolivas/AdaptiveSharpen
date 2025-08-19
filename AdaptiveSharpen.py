@@ -113,9 +113,10 @@ def main():
     parser.add_argument('--no_contrast', action='store_true', help='Apply fixed deconvolution strength without contrast adaptation')
     parser.add_argument('--oklab', action='store_true', help='Use OKlab instead of cielab deconvolution')
     parser.add_argument('--rgb', action='store_true', help='Use RGB instead of cielab deconvolution')
-    parser.add_argument('--denoise', action='store_true', help='Denoise dark pixels for when artefacts in black appear')
+    parser.add_argument('--no_denoise', action='store_true', help='Disable denoise in dark pixels')
     args = parser.parse_args()
 
+    denoise = args.no_denoise == False
     if args.oklab & args.rgb:
         raise ValueError("Cannot use both oklab and rgb")
 
@@ -160,7 +161,7 @@ def main():
         lum = lab[..., 0] / 100.0
 
     original_lum = lum.copy()
-    if args.denoise:
+    if denoise:
         bg = np.percentile(original_lum, 5)
     else:
         bg = np.median(original_lum)
@@ -168,7 +169,7 @@ def main():
     lum = np.maximum(lum, 0)
 
     if args.rgb:
-        if args.denoise:
+        if denoise:
             bgimg = np.percentile(rgb, 5, axis=(0,1))
         else:
             bgimg = np.median(rgb, axis=(0,1))
@@ -211,7 +212,7 @@ def main():
 
                 rgb_sharp[..., i] = rgb[..., i]
                 ratio = channel_sharp / np.maximum(rgb[..., i], 1e-12)
-                if args.denoise:
+                if denoise:
                     ratio = np.clip(ratio, 0.5, 2.0)
                 rgb_sharp[..., i] *= ratio
         else:
@@ -234,7 +235,7 @@ def main():
 
             lab_sharp = lab.copy()
             ratio = lum_sharp / np.maximum(original_lum, 1e-12)
-            if args.denoise:
+            if denoise:
                 ratio = np.clip(ratio, 0.5, 2.0)
             lab_sharp[..., 0] = lum_sharp * 100.0
             lab_sharp[..., 0] *= ratio
