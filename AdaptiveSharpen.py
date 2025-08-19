@@ -167,6 +167,14 @@ def main():
     lum -= bg
     lum = np.maximum(lum, 0)
 
+    if args.rgb:
+        if args.denoise:
+            bgimg = np.percentile(rgb, 5, axis=(0,1))
+        else:
+            bgimg = np.median(rgb, axis=(0,1))
+        img = rgb - bgimg
+        img = np.maximum(img, 0)
+
     window_size = 7
     contrast =std_windowed(lum, (window_size, window_size))
     contrast= np.pad(contrast,window_size//2)
@@ -181,36 +189,60 @@ def main():
         cv2.imwrite(args.output + '_debug.png', debug_img)
 
     def compute_sharpened(strength, fixed=False):
-        max_val = 2 * lum.max()
-        current = lum.copy()
+        if args.rgb:
+            rgb_sharp = np.zeros_like(img)
+            for i in range(3):
+                max_val = 2 * img[..., i].max()
+                current = img[..., i].copy()
 
-        conv = fftconvolve(current, psf, mode='same')
-        relative = lum / np.maximum(conv, 1e-12)
-        correction = fftconvolve(relative, psf, mode='same')
-        if fixed:
-            local_strength = strength
+                conv = fftconvolve(current, psf, mode='same')
+                relative = img[...,i] / np.maximum(conv, 1e-12)
+                correction = fftconvolve(relative, psf, mode='same')
+                if fixed:
+                    local_strength = strength
+                else:
+                    local_strength = strength * (contrast_norm ** 0.5)
+                damped_correction = 1 + local_strength * (correction - 1)
+                current = current * damped_correction
+                current = np.clip(current, 0, max_val)
+
+                channel_sharp = np.maximum(current, 0)
+                channel_sharp += bgimg[i]
+
+                rgb_sharp[..., i] = rgb[..., i]
+                ratio = channel_sharp / np.maximum(rgb[..., i], 1e-12)
+                if args.denoise:
+                    ratio = np.clip(ratio, 0.5, 2.0)
+                rgb_sharp[..., i] *= ratio
         else:
-            local_strength = strength * (contrast_norm ** 0.5)
-        damped_correction = 1 + local_strength * (correction - 1)
-        current = current * damped_correction
-        current = np.clip(current, 0, max_val)
+            max_val = 2 * lum.max()
+            current = lum.copy()
 
-        lum_sharp = np.maximum(current, 0)
-        lum_sharp += bg
+            conv = fftconvolve(current, psf, mode='same')
+            relative = lum / np.maximum(conv, 1e-12)
+            correction = fftconvolve(relative, psf, mode='same')
+            if fixed:
+                local_strength = strength
+            else:
+                local_strength = strength * (contrast_norm ** 0.5)
+            damped_correction = 1 + local_strength * (correction - 1)
+            current = current * damped_correction
+            current = np.clip(current, 0, max_val)
 
-        lab_sharp = lab.copy()
-        ratio = lum_sharp / np.maximum(original_lum, 1e-12)
-        if args.denoise:
-            ratio = np.clip(ratio, 0.5, 2.0)
-        if not args.rgb:
+            lum_sharp = np.maximum(current, 0)
+            lum_sharp += bg
+
+            lab_sharp = lab.copy()
+            ratio = lum_sharp / np.maximum(original_lum, 1e-12)
+            if args.denoise:
+                ratio = np.clip(ratio, 0.5, 2.0)
             lab_sharp[..., 0] = lum_sharp * 100.0
             lab_sharp[..., 0] *= ratio
-        if args.oklab:
-            rgb_sharp = oklab2rgb(lab_sharp)
-        elif args.rgb:
-            rgb_sharp = rgb * ratio[:, :, np.newaxis]
-        else:
-            rgb_sharp = lab2rgb(lab_sharp)
+            if args.oklab:
+                rgb_sharp = oklab2rgb(lab_sharp)
+            else:
+                rgb_sharp = lab2rgb(lab_sharp)
+
         return np.clip(rgb_sharp * 65535, 0, 65535).astype(np.uint16)
 
     if args.no_contrast:
