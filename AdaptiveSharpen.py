@@ -143,7 +143,6 @@ def main():
     print("Processing ", args.input)
 
     psf = generate_moffat_kernel(gamma=1.0, beta=2.0, size=21)
-    psf_mirror = np.flip(psf)
 
     if not is_colour:
         lab = rgb
@@ -187,7 +186,7 @@ def main():
 
         conv = fftconvolve(current, psf, mode='same')
         relative = lum / np.maximum(conv, 1e-12)
-        correction = fftconvolve(relative, psf_mirror, mode='same')
+        correction = fftconvolve(relative, psf, mode='same')
         if fixed:
             local_strength = strength
         else:
