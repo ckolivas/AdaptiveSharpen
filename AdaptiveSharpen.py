@@ -113,6 +113,7 @@ def main():
     parser.add_argument('--no_contrast', action='store_true', help='Apply fixed deconvolution strength without contrast adaptation')
     parser.add_argument('--oklab', action='store_true', help='Use OKlab instead of cielab deconvolution')
     parser.add_argument('--rgb', action='store_true', help='Use RGB instead of cielab deconvolution')
+    parser.add_argument('--denoise', action='store_true', help='Denoise dark pixels for when artefacts in black appear')
     args = parser.parse_args()
 
     if args.oklab & args.rgb:
@@ -180,13 +181,14 @@ def main():
     def compute_sharpened(strength, fixed=False):
         max_val = 2 * lum.max()
         current = lum.copy()
-        # Estimate noise from low-percentile regions (background)
-        percentile_val = np.percentile(original_lum, 5)
-        selected = original_lum[original_lum < percentile_val]
-        if selected.size == 0:
-            noise_std = 1e-6  # Fallback value if no pixels below percentile
-        else:
-            noise_std = np.std(selected)
+        if args.denoise:
+            # Estimate noise from low-percentile regions (background)
+            percentile_val = np.percentile(original_lum, 5)
+            selected = original_lum[original_lum < percentile_val]
+            if selected.size == 0:
+                noise_std = 1e-6  # Fallback value if no pixels below percentile
+            else:
+                noise_std = np.std(selected)
         # Single iteration with local strength
         conv = fftconvolve(current, psf, mode='same')
         relative = lum / np.maximum(conv, 1e-12)
@@ -201,9 +203,10 @@ def main():
 
         lum_sharp = np.maximum(current, 0)
         lum_sharp += bg
-        # Post-clipping to mask artifacts
-        mask_threshold = bg + 5 * noise_std
-        lum_sharp = np.where(original_lum < mask_threshold, bg, lum_sharp)
+        if args.denoise:
+            # Post-clipping to mask artifacts
+            mask_threshold = bg + 5 * noise_std
+            lum_sharp = np.where(original_lum < mask_threshold, bg, lum_sharp)
 
         lab_sharp = lab.copy()
         ratio = lum_sharp / np.maximum(original_lum, 1e-12)
