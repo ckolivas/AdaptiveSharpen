@@ -119,11 +119,13 @@ def main():
         raise ValueError("Cannot use both oklab and rgb")
 
     image = cv2.imread(args.input, cv2.IMREAD_UNCHANGED)
-    # Convert BGR(A) to RGB(A)
+    # Convert BGR(A) to RGB
     if len(image.shape) == 3 and image.shape[-1] == 4:
-        image = cv2.cvtColor(image, cv2.COLOR_BGRA2RGBA)
+        image = cv2.cvtColor(image, cv2.COLOR_BGRA2RGB)
     elif len(image.shape) == 3 and image.shape[-1] == 3:
         image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+    elif len(image.shape) == 3 and image.shape[-1] == 2:
+        image = image[..., 0]
 
     if image.dtype == np.uint16:
         max_intensity = 65535.0
@@ -132,20 +134,15 @@ def main():
     else:
         raise ValueError("Unsupported image dtype")
 
-    print("Processing ", args.input)
-    # Handle possible alpha channel
-    if len(image.shape) == 3 and image.shape[-1] == 4:
-        alpha = image[..., 3].astype(np.float32) / max_intensity
-        image = image[..., :3]
-    else:
-        alpha = None
-
     rgb = image.astype(np.float32) / max_intensity
+
+    is_colour = len(rgb.shape) == 3
+    if not is_colour:
+        rgb = np.dstack((rgb, rgb, rgb))
+    print("Processing ", args.input)
 
     psf = generate_moffat_kernel(gamma=1.0, beta=2.0, size=21)
     psf_mirror = np.flip(psf)
-
-    is_colour = len(rgb.shape) == 3 and rgb.shape[-1] == 3
 
     if not is_colour:
         lab = rgb
@@ -256,12 +253,6 @@ def main():
 
     if not is_colour:
         out_img = out_img[:, :, 0]
-
-    # Convert all transparent pixels to black if alpha exists
-    if alpha is not None:
-        out_img[alpha == 0] = 0
-
-    if not is_colour:
         cv2.imwrite(args.output, out_img)  # Grayscale
     else:
         cv2.imwrite(args.output, cv2.cvtColor(out_img, cv2.COLOR_RGB2BGR))
