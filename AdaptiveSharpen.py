@@ -148,17 +148,15 @@ def main():
     if not is_colour:
         lab = rgb
         rgb = lab[:, :, np.newaxis]
-    else:
-        # Use LAB for luminance deconvolution
+    elif not args.rgb:
+        # Use LAB for luminance deconvolution by default
         if args.oklab:
             lab = rgb2oklab(rgb)
         else:
             lab = rgb2lab(rgb)
-
-    if args.rgb:
-        lum = rgb2lum(rgb)
-    else:
         lum = lab[..., 0] / 100.0
+    else:
+        lum = rgb2lum(rgb)
 
     original_lum = lum.copy()
     if denoise:
