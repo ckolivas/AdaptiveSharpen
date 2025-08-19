@@ -132,6 +132,7 @@ def main():
     else:
         raise ValueError("Unsupported image dtype")
 
+    print("Processing ", args.input)
     # Handle possible alpha channel
     if len(image.shape) == 3 and image.shape[-1] == 4:
         alpha = image[..., 3].astype(np.float32) / max_intensity
@@ -144,16 +145,22 @@ def main():
     psf = generate_moffat_kernel(gamma=1.0, beta=2.0, size=21)
     psf_mirror = np.flip(psf)
 
-    # Use LAB for luminance deconvolution
-    if args.oklab:
-        lab = rgb2oklab(rgb)
+    is_colour = len(rgb.shape) == 3 and rgb.shape[-1] == 3
+
+    if not is_colour:
+        lab = rgb
+        rgb = lab[:, :, np.newaxis]
     else:
-        lab = rgb2lab(rgb)
+        # Use LAB for luminance deconvolution
+        if args.oklab:
+            lab = rgb2oklab(rgb)
+        else:
+            lab = rgb2lab(rgb)
+
     if args.rgb:
         lum = rgb2lum(rgb)
     else:
         lum = lab[..., 0] / 100.0
-    is_colour = len(rgb.shape) == 3 and rgb.shape[-1] == 3
 
     original_lum = lum.copy()
     bg = np.percentile(original_lum, 5)
@@ -254,13 +261,10 @@ def main():
     if alpha is not None:
         out_img[alpha == 0] = 0
 
-        # Write with OpenCV (convert RGB(A) to BGR(A))
-    if len(out_img.shape) == 3 and out_img.shape[-1] == 4:
-        cv2.imwrite(args.output, cv2.cvtColor(out_img, cv2.COLOR_RGBA2BGRA))
-    elif len(out_img.shape) == 3 and out_img.shape[-1] == 3:
-        cv2.imwrite(args.output, cv2.cvtColor(out_img, cv2.COLOR_RGB2BGR))
-    else:
+    if not is_colour:
         cv2.imwrite(args.output, out_img)  # Grayscale
+    else:
+        cv2.imwrite(args.output, cv2.cvtColor(out_img, cv2.COLOR_RGB2BGR))
 
 if __name__ == '__main__':
     main()
