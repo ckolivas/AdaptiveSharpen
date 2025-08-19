@@ -161,7 +161,10 @@ def main():
         lum = lab[..., 0] / 100.0
 
     original_lum = lum.copy()
-    bg = np.percentile(original_lum, 5)
+    if args.denoise:
+        bg = np.percentile(original_lum, 5)
+    else:
+        bg = np.median(original_lum)
     lum -= bg
     lum = np.maximum(lum, 0)
 
@@ -181,15 +184,7 @@ def main():
     def compute_sharpened(strength, fixed=False):
         max_val = 2 * lum.max()
         current = lum.copy()
-        if args.denoise:
-            # Estimate noise from low-percentile regions (background)
-            percentile_val = np.percentile(original_lum, 5)
-            selected = original_lum[original_lum < percentile_val]
-            if selected.size == 0:
-                noise_std = 1e-6  # Fallback value if no pixels below percentile
-            else:
-                noise_std = np.std(selected)
-        # Single iteration with local strength
+
         conv = fftconvolve(current, psf, mode='same')
         relative = lum / np.maximum(conv, 1e-12)
         correction = fftconvolve(relative, psf_mirror, mode='same')
@@ -203,14 +198,11 @@ def main():
 
         lum_sharp = np.maximum(current, 0)
         lum_sharp += bg
-        if args.denoise:
-            # Post-clipping to mask artifacts
-            mask_threshold = bg + 5 * noise_std
-            lum_sharp = np.where(original_lum < mask_threshold, bg, lum_sharp)
 
         lab_sharp = lab.copy()
         ratio = lum_sharp / np.maximum(original_lum, 1e-12)
-        ratio = np.clip(ratio, 0.5, 2.0)
+        if args.denoise:
+            ratio = np.clip(ratio, 0.5, 2.0)
         if not args.rgb:
             lab_sharp[..., 0] = lum_sharp * 100.0
             lab_sharp[..., 0] *= ratio
