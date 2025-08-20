@@ -145,10 +145,7 @@ def main():
 
     psf = generate_moffat_kernel(gamma=1.0, beta=2.0, size=21)
 
-    if not is_colour:
-        lab = rgb
-        rgb = lab[:, :, np.newaxis]
-    elif not args.rgb:
+    if not args.rgb:
         # Use LAB for luminance deconvolution by default
         if args.oklab:
             lab = rgb2oklab(rgb)
