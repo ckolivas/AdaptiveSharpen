@@ -148,14 +148,11 @@ def main():
     #Use oklab to preserve colours
     oklab = rgb2oklab(rgb)
     max_lum = np.max(oklab)
-    if max_lum > 85:
+    if max_lum > 80:
         print("Decreasing luminance on bright image with max luminance of ", max_lum)
         oklab *= 75 / max_lum
         rgb = oklab2rgb(oklab)
-    elif max_lum < 65:
-        print("Increasing luminance on dim image with max luminance of ", max_lum)
-        oklab *= 75 / max_lum
-        rgb = oklab2rgb(oklab)
+        max_lum = 75
 
     if not args.rgb:
         # Use LAB for luminance deconvolution by default
@@ -200,7 +197,6 @@ def main():
         if args.rgb:
             rgb_sharp = np.zeros_like(img)
             for i in range(3):
-                max_val = 2 * img[..., i].max()
                 current = img[..., i].copy()
 
                 conv = fftconvolve(current, psf, mode='same')
@@ -212,7 +208,6 @@ def main():
                     local_strength = strength * (contrast_norm ** 0.5)
                 damped_correction = 1 + local_strength * (correction - 1)
                 current = current * damped_correction
-                current = np.clip(current, 0, max_val)
 
                 channel_sharp = np.maximum(current, 0)
                 channel_sharp += bgimg[i]
@@ -223,7 +218,6 @@ def main():
                     ratio = np.clip(ratio, 0.5, 2.0)
                 rgb_sharp[..., i] *= ratio
         else:
-            max_val = 2 * lum.max()
             current = lum.copy()
 
             conv = fftconvolve(current, psf, mode='same')
@@ -235,7 +229,6 @@ def main():
                 local_strength = strength * (contrast_norm ** 0.5)
             damped_correction = 1 + local_strength * (correction - 1)
             current = current * damped_correction
-            current = np.clip(current, 0, max_val)
 
             lum_sharp = np.maximum(current, 0)
             lum_sharp += bg
@@ -264,15 +257,9 @@ def main():
             best_out_img = compute_sharpened(strength)
             while True:
                 out_img = compute_sharpened(strength)
-                # Compute max brightness as percentage
-                if is_colour:
-                    rgb_out = out_img.astype(np.float32) / 65535.0
-                    lab_out = rgb2lab(rgb_out)
-                    max_brightness = np.max(lab_out[..., 0])
-                else:
-                    max_brightness = np.max(out_img.astype(np.float32) / 65535.0) * 100
-                if max_brightness > 95:
-                    out_img = best_out_img
+                out_lum = rgb2oklab(out_img / 65535)
+                out_maxlum = np.max(out_lum)
+                if out_maxlum > max_lum * 1.25:
                     print(f"Used max_strength: {best_strength}")
                     break
                 best_strength = strength
