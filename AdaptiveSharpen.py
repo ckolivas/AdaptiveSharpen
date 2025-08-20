@@ -145,6 +145,18 @@ def main():
 
     psf = generate_moffat_kernel(gamma=1.0, beta=2.0, size=21)
 
+    #Use oklab to preserve colours
+    oklab = rgb2oklab(rgb)
+    max_lum = np.max(oklab)
+    if max_lum > 85:
+        print("Decreasing luminance on bright image with max luminance of ", max_lum)
+        oklab *= 75 / max_lum
+        rgb = oklab2rgb(oklab)
+    elif max_lum < 65:
+        print("Increasing luminance on dim image with max luminance of ", max_lum)
+        oklab *= 75 / max_lum
+        rgb = oklab2rgb(oklab)
+
     if not args.rgb:
         # Use LAB for luminance deconvolution by default
         if args.oklab:
