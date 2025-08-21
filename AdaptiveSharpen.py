@@ -85,8 +85,18 @@ def main():
     base = os.path.basename(args.input)
     base = base[:-len('.png')]
 
-    rgb = image.astype(np.float32) / max_intensity
-    rgb = srgb_to_linear(rgb)  # Convert to linear pixels after input
+    srgb = image.astype(np.float32) / max_intensity
+    max_lum = np.max(srgb)
+    if args.noisy:
+        lum_cap = 1.0 / 1.125
+    else:
+        lum_cap = 1.0 / 1.25
+    if args.max_strength == None and max_lum >= lum_cap:
+        print("Decreasing luminance on bright image with max luminance of ", max_lum)
+        srgb *= 0.75 / max_lum
+        max_lum = 0.75
+    rgb = srgb_to_linear(srgb)  # Convert to linear pixels after input
+    print("Max rgb ", np.max(rgb))
 
     is_colour = len(rgb.shape) == 3
     if not is_colour:
@@ -94,16 +104,6 @@ def main():
     print("Processing ", args.input)
 
     psf = generate_moffat_kernel(gamma=1.0, beta=2.0, size=21)
-
-    max_lum = np.max(linear_rgb2lum(rgb))
-    if args.noisy:
-        lum_cap = 1.0 / 1.125
-    else:
-        lum_cap = 1.0 / 1.25
-    if args.max_strength == None and max_lum >= lum_cap:
-        print("Decreasing luminance on bright image with max luminance of ", max_lum)
-        rgb *= 0.75 / max_lum
-        max_lum = 0.75
 
     lum = linear_rgb2lum(rgb)
 
@@ -142,6 +142,7 @@ def main():
         lum_boost = 1.25
     def compute_sharpened(strength, fixed=False):
         nonlocal clipped
+
         clipped = False
         if args.rgb:
             rgb_sharp = np.zeros_like(rgb)
@@ -159,7 +160,6 @@ def main():
                 current = current * damped_correction
 
                 channel_sharp = np.maximum(current, 0) + bgimg[i]
-
                 rgb_sharp[..., i] = rgb[..., i] * channel_sharp
         else:
             current = lum.copy()
@@ -175,7 +175,6 @@ def main():
             current = current * damped_correction
 
             lum_sharp = np.maximum(current, 0) + bg
-
             rgb_sharp = rgb * lum_sharp[..., np.newaxis]
 
         local_max = np.max(rgb_sharp)
@@ -183,16 +182,12 @@ def main():
             clipped = True
             rgb_sharp *= 1 / local_max
 
-        srgb_sharp = linear_to_srgb(rgb_sharp)
-        srgb_sharp = np.clip(srgb_sharp, 0, 1)
-
-        srgb_sharp *= 65535
-        return srgb_sharp.astype(np.uint16)
+        return rgb_sharp
 
     if args.no_contrast:
         strength = args.max_strength if args.max_strength is not None else 10.0
         best_strength = strength
-        out_img = compute_sharpened(strength, fixed=True)
+        out_linear = compute_sharpened(strength, fixed=True)
         print(f"Used max_strength: {strength}")
     else:
         if args.max_strength is None:
@@ -200,15 +195,14 @@ def main():
             best_strength = 1.0
             best_out_img = compute_sharpened(strength)
             while True:
-                out_img = compute_sharpened(strength)
-                out_srgb = out_img / 65535.0
-                out_linear = srgb_to_linear(out_srgb)
-                out_maxlum = np.max(linear_rgb2lum(out_linear))
+                out_linear = compute_sharpened(strength)
+                out_srgb = linear_to_srgb(out_linear)
+                out_maxlum = np.max(out_srgb)
                 if out_maxlum > max_lum * lum_boost:
-                    print(f"Used max_strength: {best_strength}")
+                    print(f"Used max_strength: {best_strength} out_maxlum: {out_maxlum}")
                     break
                 best_strength = strength
-                best_out_img = out_img
+                best_out_img = out_linear
                 strength += 1.0  # Increase by 1 each time
                 if strength > 50:  # Safety cap to prevent infinite loop
                     print(f"Used max_strength: {best_strength}")
@@ -216,8 +210,11 @@ def main():
             out_img = best_out_img
         else:
             best_strength = args.max_strength
-            out_img = compute_sharpened(best_strength)
+            out_linear = compute_sharpened(best_strength)
             print(f"Used max_strength: {best_strength}")
+
+    out_srgb = linear_to_srgb(out_linear) * 65535
+    out_img = out_srgb.astype(np.uint16)
 
     if args.rgb:
         extra = "RGB"
