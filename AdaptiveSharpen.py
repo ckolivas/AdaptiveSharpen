@@ -43,6 +43,53 @@ def linear_to_srgb(linear):
         1.055 * (linear ** (1 / 2.4)) - 0.055
     )
 
+def linearrgb_to_oklab(linear):
+    """Convert gamma-corrected sRGB [0,1] to Oklab (assumes D65 whitepoint)."""
+
+    # Linear RGB to LMS (first matrix)
+    M1 = np.array([
+        [0.4122214708, 0.5363325363, 0.0514459929],
+        [0.2119034982, 0.6806995451, 0.1073969566],
+        [0.0883024619, 0.2817188376, 0.6299787005]
+    ])
+    lms = np.einsum('ij,...j->...i', M1, linear)
+
+    # Cube root
+    lms_prime = np.cbrt(lms)
+
+    # LMS' to Oklab (second matrix)
+    M2 = np.array([
+        [0.2104542553, 0.7936177850, -0.0040720468],
+        [1.9779984951, -2.4285922050, 0.4505937099],
+        [0.0259040371, 0.7827717662, -0.8086757660]
+    ])
+    oklab = np.einsum('ij,...j->...i', M2, lms_prime)
+    return oklab
+
+def oklab_to_linearrgb(oklab):
+    """Convert Oklab to gamma-corrected sRGB [0,1]."""
+    # Oklab to LMS' (inverse second matrix)
+    M2_inv = np.array([
+        [1.0000000000,  0.3963377774,  0.2158037573],
+        [1.0000000000, -0.1055613458, -0.0638541728],
+        [1.0000000000, -0.0894841775, -1.2914855480]
+    ])
+    lms_prime = np.einsum('ij,...j->...i', M2_inv, oklab)
+
+    # Cube
+    lms = lms_prime ** 3
+
+    # LMS to linear RGB (inverse first matrix)
+    M1_inv = np.array([
+        [ 4.0767416621, -3.3077115913,  0.2309699292],
+        [-1.2684380046,  2.6097574011, -0.3413193965],
+        [-0.0041960863, -0.7034186147,  1.7076147010]
+    ])
+    linear = np.einsum('ij,...j->...i', M1_inv, lms)
+    linear = np.maximum(linear, 0)  # Clip negatives to prevent invalid power
+
+    return np.clip(linear, 0, 1)  # Ensure [0,1]
+
 def linear_rgb2lum(rgb):
     return 0.212671 * rgb[:, :, 0] + 0.715160 * rgb[:, :, 1] + 0.072169 * rgb[:, :, 2]
 
@@ -139,6 +186,7 @@ def main():
         lum_boost = 1.125
     else:
         lum_boost = 1.25
+
     def compute_sharpened(strength, fixed=False):
         nonlocal clipped
 
@@ -164,6 +212,7 @@ def main():
                     ratio = np.clip(ratio, 0.5, 2.0)
                 rgb_sharp[..., i] = rgb[..., i] * ratio
         else:
+            oklab_linear = linearrgb_to_oklab(rgb)
             current = lum.copy()
 
             conv = fftconvolve(current, psf, mode='same')
@@ -180,7 +229,8 @@ def main():
             ratio = lum_sharp / np.maximum(original_lum, 1e-12)
             if denoise:
                 ratio = np.clip(ratio, 0.5, 2.0)
-            rgb_sharp = rgb * ratio[..., np.newaxis]
+            oklab_linear[..., 0] *= ratio
+            rgb_sharp = oklab_to_linearrgb(oklab_linear)
 
         local_max = np.max(rgb_sharp)
         if local_max > 1:
