@@ -281,6 +281,7 @@ def main():
 
     if args.no_contrast:
         strength = args.max_strength if args.max_strength is not None else 10.0
+        best_strength = strength
         out_img = compute_sharpened(strength, fixed=True)
         print(f"Used max_strength: {strength}")
     else:
