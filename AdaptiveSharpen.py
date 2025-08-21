@@ -12,6 +12,7 @@
 # Automatic detection of the optimal max_strength is a blunt tool that expects
 # an initially stacked image with a max histogram stretched to 70%
 
+import os
 import argparse
 import numpy as np
 from scipy.signal import fftconvolve
@@ -107,7 +108,7 @@ def std_windowed(img, win_size):
 def main():
     parser = argparse.ArgumentParser(description='Apply adaptive Lucy-Richardson deconvolution on luminance channel of a 16-bit PNG image.')
     parser.add_argument('input', help='Input PNG file')
-    parser.add_argument('output', help='Output 16-bit PNG file')
+    #parser.add_argument('output', action='store_true', default='', help='Output 16-bit PNG file')
     parser.add_argument('--max_strength', type=float, default=None, help='Maximum deconvolution strength (default: auto; higher values for more aggressive sharpening)')
     parser.add_argument('--debug', action='store_true', help='Enable debug output (saves contrast map)')
     parser.add_argument('--no_contrast', action='store_true', help='Apply fixed deconvolution strength without contrast adaptation')
@@ -136,6 +137,9 @@ def main():
         max_intensity = 255.0
     else:
         raise ValueError("Unsupported image dtype")
+
+    base = os.path.basename(args.input)
+    base = base[:-len('.png')]
 
     rgb = image.astype(np.float32) / max_intensity
 
@@ -192,7 +196,7 @@ def main():
     # Generate debug contrast map if --debug is set
     if args.debug:
         debug_img = np.clip(contrast_norm * 65535, 0, 65535).astype(np.uint16)
-        cv2.imwrite(args.output + '_debug.png', debug_img)
+        cv2.imwrite(base + '_debug.png', debug_img)
 
     if args.noisy:
         lum_boost = 1.125
@@ -280,14 +284,16 @@ def main():
                     print(f"Used max_strength: {best_strength}")
                     break
         else:
-            out_img = compute_sharpened(args.max_strength)
-            print(f"Used max_strength: {args.max_strength}")
+            best_strength = args.max_strength
+            out_img = compute_sharpened(best_strength)
+            print(f"Used max_strength: {best_strength}")
 
+    outname = base + "A" + str(int(best_strength)) + ".png"
     if not is_colour:
         out_img = out_img[:, :, 0]
-        cv2.imwrite(args.output, out_img)  # Grayscale
+        cv2.imwrite(outname, out_img)  # Grayscale
     else:
-        cv2.imwrite(args.output, cv2.cvtColor(out_img, cv2.COLOR_RGB2BGR))
+        cv2.imwrite(outname, cv2.cvtColor(out_img, cv2.COLOR_RGB2BGR))
 
 if __name__ == '__main__':
     main()
