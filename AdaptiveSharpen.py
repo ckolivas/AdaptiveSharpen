@@ -114,6 +114,7 @@ def main():
     parser.add_argument('--oklab', action='store_true', help='Use OKlab instead of cielab deconvolution')
     parser.add_argument('--rgb', action='store_true', help='Use RGB instead of cielab deconvolution')
     parser.add_argument('--no_denoise', action='store_true', help='Disable denoise in dark pixels')
+    parser.add_argument('--noisy', action='store_true', help='Less sharpening in low contrast for noisy images')
     args = parser.parse_args()
 
     denoise = args.no_denoise == False
@@ -193,6 +194,10 @@ def main():
         debug_img = np.clip(contrast_norm * 65535, 0, 65535).astype(np.uint16)
         cv2.imwrite(args.output + '_debug.png', debug_img)
 
+    if args.noisy:
+        lum_boost = 1.125
+    else:
+        lum_boost = 1.25
     def compute_sharpened(strength, fixed=False):
         if args.rgb:
             rgb_sharp = np.zeros_like(img)
@@ -205,7 +210,10 @@ def main():
                 if fixed:
                     local_strength = strength
                 else:
-                    local_strength = strength * (contrast_norm ** 0.5)
+                    if args.noisy:
+                        local_strength = strength * contrast_norm
+                    else:
+                        local_strength = strength * (contrast_norm ** 0.5)
                 damped_correction = 1 + local_strength * (correction - 1)
                 current = current * damped_correction
 
@@ -226,7 +234,10 @@ def main():
             if fixed:
                 local_strength = strength
             else:
-                local_strength = strength * (contrast_norm ** 0.5)
+                if args.noisy:
+                    local_strength = strength * contrast_norm
+                else:
+                    local_strength = strength * (contrast_norm ** 0.5)
             damped_correction = 1 + local_strength * (correction - 1)
             current = current * damped_correction
 
@@ -259,7 +270,7 @@ def main():
                 out_img = compute_sharpened(strength)
                 out_lum = rgb2oklab(out_img / 65535)
                 out_maxlum = np.max(out_lum)
-                if out_maxlum > max_lum * 1.25:
+                if out_maxlum > max_lum * lum_boost:
                     print(f"Used max_strength: {best_strength}")
                     break
                 best_strength = strength
