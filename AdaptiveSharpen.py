@@ -224,10 +224,7 @@ def main():
                 if fixed:
                     local_strength = strength
                 else:
-                    if args.noisy:
-                        local_strength = strength * contrast_norm
-                    else:
-                        local_strength = strength * (contrast_norm ** 0.5)
+                    local_strength = strength * (contrast_norm ** 0.5)
                 damped_correction = 1 + local_strength * (correction - 1)
                 current = current * damped_correction
 
@@ -253,10 +250,7 @@ def main():
             if fixed:
                 local_strength = strength
             else:
-                if args.noisy:
-                    local_strength = strength * contrast_norm
-                else:
-                    local_strength = strength * (contrast_norm ** 0.5)
+                local_strength = strength * (contrast_norm ** 0.5)
             damped_correction = 1 + local_strength * (correction - 1)
             current = current * damped_correction
 
