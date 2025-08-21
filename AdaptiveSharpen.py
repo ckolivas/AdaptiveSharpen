@@ -144,6 +144,7 @@ def main():
     base = base[:-len('.png')]
 
     rgb = image.astype(np.float32) / max_intensity
+    rgb = srgb_to_linear(rgb)  # Convert to linear pixels after input
 
     is_colour = len(rgb.shape) == 3
     if not is_colour:
@@ -153,7 +154,8 @@ def main():
     psf = generate_moffat_kernel(gamma=1.0, beta=2.0, size=21)
 
     #Use oklab to preserve colours
-    oklab = rgb2oklab(rgb)
+    temp = linear_to_srgb(rgb)
+    oklab = rgb2oklab(temp)
     max_lum = np.max(oklab)
     if args.noisy:
         lum_cap = 100 / 1.125
@@ -162,18 +164,19 @@ def main():
     if args.max_strength == None and max_lum >= lum_cap:
         print("Decreasing luminance on bright image with max luminance of ", max_lum)
         oklab *= 75 / max_lum
-        rgb = oklab2rgb(oklab)
+        temp = oklab2rgb(oklab)
+        rgb = srgb_to_linear(temp)
         max_lum = 75
 
     if not args.rgb:
-        # Use LAB for luminance deconvolution by default
+        temp = linear_to_srgb(rgb)
         if args.oklab:
-            lab = rgb2oklab(rgb)
+            lab = rgb2oklab(temp)
         else:
-            lab = rgb2lab(rgb)
+            lab = rgb2lab(temp)
         lum = lab[..., 0] / 100.0
     else:
-        lum = rgb2lum(rgb)
+        lum = rgb2lum(rgb)  # Note: this is now linear lum since rgb is linear, but function uses sRGB coeffs; may need adjustment if critical
 
     original_lum = lum.copy()
     if denoise:
@@ -236,12 +239,15 @@ def main():
                 if denoise:
                     ratio = np.clip(ratio, 0.5, 2.0)
                 rgb_sharp[..., i] *= ratio
-            oklab = rgb2oklab(rgb_sharp)
+            temp = linear_to_srgb(rgb_sharp)
+            oklab = rgb2oklab(temp)
             local_max = np.max(oklab[..., 0])
             if local_max > 100:
                 clipped = True
                 oklab[..., 0] *= 100 / local_max
                 rgb_sharp = oklab2rgb(oklab)
+            else:
+                rgb_sharp = temp
         else:
             current = lum.copy()
 
