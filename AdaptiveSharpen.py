@@ -138,6 +138,8 @@ def main():
     else:
         raise ValueError("Unsupported image dtype")
 
+    clipped = False
+
     base = os.path.basename(args.input)
     base = base[:-len('.png')]
 
@@ -153,11 +155,6 @@ def main():
     #Use oklab to preserve colours
     oklab = rgb2oklab(rgb)
     max_lum = np.max(oklab)
-    if max_lum > 80:
-        print("Decreasing luminance on bright image with max luminance of ", max_lum)
-        oklab *= 75 / max_lum
-        rgb = oklab2rgb(oklab)
-        max_lum = 75
 
     if not args.rgb:
         # Use LAB for luminance deconvolution by default
@@ -203,6 +200,7 @@ def main():
     else:
         lum_boost = 1.25
     def compute_sharpened(strength, fixed=False):
+        nonlocal clipped
         if args.rgb:
             rgb_sharp = np.zeros_like(img)
             for i in range(3):
@@ -229,6 +227,12 @@ def main():
                 if denoise:
                     ratio = np.clip(ratio, 0.5, 2.0)
                 rgb_sharp[..., i] *= ratio
+            oklab = rgb2oklab(rgb_sharp)
+            local_max = np.max(oklab[..., 0])
+            if local_max > 100:
+                clipped = True
+                oklab[..., 0] *= 100 / local_max
+                rgb_sharp = oklab2rgb(oklab)
         else:
             current = lum.copy()
 
@@ -254,12 +258,17 @@ def main():
                 ratio = np.clip(ratio, 0.5, 2.0)
             lab_sharp[..., 0] = lum_sharp * 100.0
             lab_sharp[..., 0] *= ratio
+            local_max = np.max(lab_sharp[..., 0])
+            if local_max > 100:
+                clipped = True
+                lab_sharp *= 100 / local_max
             if args.oklab:
                 rgb_sharp = oklab2rgb(lab_sharp)
             else:
                 rgb_sharp = lab2rgb(lab_sharp)
 
-        return np.clip(rgb_sharp * 65535, 0, 65535).astype(np.uint16)
+        rgb_sharp *= 65535
+        return rgb_sharp.astype(np.uint16)
 
     if args.no_contrast:
         strength = args.max_strength if args.max_strength is not None else 10.0
@@ -288,6 +297,8 @@ def main():
             out_img = compute_sharpened(best_strength)
             print(f"Used max_strength: {best_strength}")
 
+    if clipped:
+        print("Scaled down brightness to prevent clipping")
     outname = base + "A" + str(int(best_strength)) + ".png"
     if not is_colour:
         out_img = out_img[:, :, 0]
