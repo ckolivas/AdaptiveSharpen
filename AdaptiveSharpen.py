@@ -235,10 +235,6 @@ def main():
                 channel_sharp += bgimg[i]
 
                 rgb_sharp[..., i] = rgb[..., i]
-                ratio = channel_sharp / np.maximum(rgb[..., i], 1e-12)
-                if denoise:
-                    ratio = np.clip(ratio, 0.5, 2.0)
-                rgb_sharp[..., i] *= ratio
             temp = linear_to_srgb(rgb_sharp)
             oklab = rgb2oklab(temp)
             local_max = np.max(oklab[..., 0])
@@ -268,11 +264,7 @@ def main():
             lum_sharp += bg
 
             lab_sharp = lab.copy()
-            ratio = lum_sharp / np.maximum(original_lum, 1e-12)
-            if denoise:
-                ratio = np.clip(ratio, 0.5, 2.0)
             lab_sharp[..., 0] = lum_sharp * 100.0
-            lab_sharp[..., 0] *= ratio
             local_max = np.max(lab_sharp[..., 0])
             if local_max > 100:
                 clipped = True
