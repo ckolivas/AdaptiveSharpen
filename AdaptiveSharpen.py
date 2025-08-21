@@ -212,7 +212,7 @@ def main():
                 if strength > 50:  # Safety cap to prevent infinite loop
                     print(f"Used max_strength: {best_strength}")
                     break
-            out_img = best_out_img
+            out_linear = best_out_img
         else:
             best_strength = args.max_strength
             out_linear = compute_sharpened(best_strength)
