@@ -16,9 +16,7 @@ import os
 import argparse
 import numpy as np
 from scipy.signal import fftconvolve
-from scipy.ndimage import generic_filter
 import cv2
-from skimage.color import rgb2lab, lab2rgb
 from numpy.lib.stride_tricks import sliding_window_view
 
 def generate_moffat_kernel(gamma=1.0, beta=2.0, size=21):
@@ -45,60 +43,8 @@ def linear_to_srgb(linear):
         1.055 * (linear ** (1 / 2.4)) - 0.055
     )
 
-def rgb2oklab(rgb):
-    """Convert gamma-corrected sRGB [0,1] to Oklab (assumes D65 whitepoint)."""
-    # Linearize
-    linear = srgb_to_linear(rgb)
-
-    # Linear RGB to LMS (first matrix)
-    M1 = np.array([
-        [0.4122214708, 0.5363325363, 0.0514459929],
-        [0.2119034982, 0.6806995451, 0.1073969566],
-        [0.0883024619, 0.2817188376, 0.6299787005]
-    ])
-    lms = np.einsum('ij,...j->...i', M1, linear)
-
-    # Cube root
-    lms_prime = np.cbrt(lms)
-
-    # LMS' to Oklab (second matrix)
-    M2 = np.array([
-        [0.2104542553, 0.7936177850, -0.0040720468],
-        [1.9779984951, -2.4285922050, 0.4505937099],
-        [0.0259040371, 0.7827717662, -0.8086757660]
-    ])
-    oklab = np.einsum('ij,...j->...i', M2, lms_prime)
-    return oklab * 100
-
-def oklab2rgb(oklab):
-    oklab /= 100
-    """Convert Oklab to gamma-corrected sRGB [0,1]."""
-    # Oklab to LMS' (inverse second matrix)
-    M2_inv = np.array([
-        [1.0000000000,  0.3963377774,  0.2158037573],
-        [1.0000000000, -0.1055613458, -0.0638541728],
-        [1.0000000000, -0.0894841775, -1.2914855480]
-    ])
-    lms_prime = np.einsum('ij,...j->...i', M2_inv, oklab)
-
-    # Cube
-    lms = lms_prime ** 3
-
-    # LMS to linear RGB (inverse first matrix)
-    M1_inv = np.array([
-        [ 4.0767416621, -3.3077115913,  0.2309699292],
-        [-1.2684380046,  2.6097574011, -0.3413193965],
-        [-0.0041960863, -0.7034186147,  1.7076147010]
-    ])
-    linear = np.einsum('ij,...j->...i', M1_inv, lms)
-    linear = np.maximum(linear, 0)  # Clip negatives to prevent invalid power
-
-    # Gamma correct
-    srgb = linear_to_srgb(linear)
-    return np.clip(srgb, 0, 1)  # Ensure [0,1]
-
-def rgb2lum(rgb):
-    return 0.299 * rgb[:, :, 0] + 0.587 * rgb[:, :, 1] + 0.114 * rgb[:, :, 2]
+def linear_rgb2lum(rgb):
+    return 0.212671 * rgb[:, :, 0] + 0.715160 * rgb[:, :, 1] + 0.072169 * rgb[:, :, 2]
 
 def std_windowed(img, win_size):
     win_h, win_w = win_size
@@ -108,19 +54,15 @@ def std_windowed(img, win_size):
 def main():
     parser = argparse.ArgumentParser(description='Apply adaptive Lucy-Richardson deconvolution on luminance channel of a 16-bit PNG image.')
     parser.add_argument('input', help='Input PNG file')
-    #parser.add_argument('output', action='store_true', default='', help='Output 16-bit PNG file')
     parser.add_argument('--max_strength', type=float, default=None, help='Maximum deconvolution strength (default: auto; higher values for more aggressive sharpening)')
     parser.add_argument('--debug', action='store_true', help='Enable debug output (saves contrast map)')
     parser.add_argument('--no_contrast', action='store_true', help='Apply fixed deconvolution strength without contrast adaptation')
-    parser.add_argument('--oklab', action='store_true', help='Use OKlab instead of cielab deconvolution')
     parser.add_argument('--rgb', action='store_true', help='Use RGB instead of cielab deconvolution')
     parser.add_argument('--no_denoise', action='store_true', help='Disable denoise in dark pixels')
     parser.add_argument('--noisy', action='store_true', help='Less sharpening in low contrast for noisy images')
     args = parser.parse_args()
 
     denoise = args.no_denoise == False
-    if args.oklab & args.rgb:
-        raise ValueError("Cannot use both oklab and rgb")
 
     image = cv2.imread(args.input, cv2.IMREAD_UNCHANGED)
     # Convert BGR(A) to RGB
@@ -153,30 +95,17 @@ def main():
 
     psf = generate_moffat_kernel(gamma=1.0, beta=2.0, size=21)
 
-    #Use oklab to preserve colours
-    temp = linear_to_srgb(rgb)
-    oklab = rgb2oklab(temp)
-    max_lum = np.max(oklab)
+    max_lum = np.max(linear_rgb2lum(rgb))
     if args.noisy:
-        lum_cap = 100 / 1.125
+        lum_cap = 1.0 / 1.125
     else:
-        lum_cap = 100 / 1.25
+        lum_cap = 1.0 / 1.25
     if args.max_strength == None and max_lum >= lum_cap:
         print("Decreasing luminance on bright image with max luminance of ", max_lum)
-        oklab *= 75 / max_lum
-        temp = oklab2rgb(oklab)
-        rgb = srgb_to_linear(temp)
-        max_lum = 75
+        rgb *= 0.75 / max_lum
+        max_lum = 0.75
 
-    if not args.rgb:
-        temp = linear_to_srgb(rgb)
-        if args.oklab:
-            lab = rgb2oklab(temp)
-        else:
-            lab = rgb2lab(temp)
-        lum = lab[..., 0] / 100.0
-    else:
-        lum = rgb2lum(rgb)  # Note: this is now linear lum since rgb is linear, but function uses sRGB coeffs; may need adjustment if critical
+    lum = linear_rgb2lum(rgb)
 
     original_lum = lum.copy()
     if denoise:
@@ -195,8 +124,8 @@ def main():
         img = np.maximum(img, 0)
 
     window_size = 7
-    contrast =std_windowed(lum, (window_size, window_size))
-    contrast= np.pad(contrast,window_size//2)
+    contrast = std_windowed(lum, (window_size, window_size))
+    contrast = np.pad(contrast, window_size//2)
 
     contrast_min = contrast.min()
     contrast_max = contrast.max()
@@ -213,13 +142,14 @@ def main():
         lum_boost = 1.25
     def compute_sharpened(strength, fixed=False):
         nonlocal clipped
+        clipped = False
         if args.rgb:
-            rgb_sharp = np.zeros_like(img)
+            rgb_sharp = np.zeros_like(rgb)
             for i in range(3):
                 current = img[..., i].copy()
 
                 conv = fftconvolve(current, psf, mode='same')
-                relative = img[...,i] / np.maximum(conv, 1e-12)
+                relative = current / np.maximum(conv, 1e-12)
                 correction = fftconvolve(relative, psf, mode='same')
                 if fixed:
                     local_strength = strength
@@ -228,24 +158,14 @@ def main():
                 damped_correction = 1 + local_strength * (correction - 1)
                 current = current * damped_correction
 
-                channel_sharp = np.maximum(current, 0)
-                channel_sharp += bgimg[i]
+                channel_sharp = np.maximum(current, 0) + bgimg[i]
 
-                rgb_sharp[..., i] = rgb[..., i]
-            temp = linear_to_srgb(rgb_sharp)
-            oklab = rgb2oklab(temp)
-            local_max = np.max(oklab[..., 0])
-            if local_max > 100:
-                clipped = True
-                oklab[..., 0] *= 100 / local_max
-                rgb_sharp = oklab2rgb(oklab)
-            else:
-                rgb_sharp = temp
+                rgb_sharp[..., i] = rgb[..., i] * channel_sharp
         else:
             current = lum.copy()
 
             conv = fftconvolve(current, psf, mode='same')
-            relative = lum / np.maximum(conv, 1e-12)
+            relative = current / np.maximum(conv, 1e-12)
             correction = fftconvolve(relative, psf, mode='same')
             if fixed:
                 local_strength = strength
@@ -254,22 +174,20 @@ def main():
             damped_correction = 1 + local_strength * (correction - 1)
             current = current * damped_correction
 
-            lum_sharp = np.maximum(current, 0)
-            lum_sharp += bg
+            lum_sharp = np.maximum(current, 0) + bg
 
-            lab_sharp = lab.copy()
-            lab_sharp[..., 0] = lum_sharp * 100.0
-            local_max = np.max(lab_sharp[..., 0])
-            if local_max > 100:
-                clipped = True
-                lab_sharp *= 100 / local_max
-            if args.oklab:
-                rgb_sharp = oklab2rgb(lab_sharp)
-            else:
-                rgb_sharp = lab2rgb(lab_sharp)
+            rgb_sharp = rgb * lum_sharp[..., np.newaxis]
 
-        rgb_sharp *= 65535
-        return rgb_sharp.astype(np.uint16)
+        local_max = np.max(rgb_sharp)
+        if local_max > 1:
+            clipped = True
+            rgb_sharp *= 1 / local_max
+
+        srgb_sharp = linear_to_srgb(rgb_sharp)
+        srgb_sharp = np.clip(srgb_sharp, 0, 1)
+
+        srgb_sharp *= 65535
+        return srgb_sharp.astype(np.uint16)
 
     if args.no_contrast:
         strength = args.max_strength if args.max_strength is not None else 10.0
@@ -283,8 +201,9 @@ def main():
             best_out_img = compute_sharpened(strength)
             while True:
                 out_img = compute_sharpened(strength)
-                out_lum = rgb2oklab(out_img / 65535)
-                out_maxlum = np.max(out_lum)
+                out_srgb = out_img / 65535.0
+                out_linear = srgb_to_linear(out_srgb)
+                out_maxlum = np.max(linear_rgb2lum(out_linear))
                 if out_maxlum > max_lum * lum_boost:
                     print(f"Used max_strength: {best_strength}")
                     break
@@ -294,6 +213,7 @@ def main():
                 if strength > 50:  # Safety cap to prevent infinite loop
                     print(f"Used max_strength: {best_strength}")
                     break
+            out_img = best_out_img
         else:
             best_strength = args.max_strength
             out_img = compute_sharpened(best_strength)
@@ -301,8 +221,6 @@ def main():
 
     if args.rgb:
         extra = "RGB"
-    elif args.oklab:
-        extra = "OK"
     else:
         extra = ""
     if clipped:
