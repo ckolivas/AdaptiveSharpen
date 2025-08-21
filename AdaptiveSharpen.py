@@ -155,6 +155,15 @@ def main():
     #Use oklab to preserve colours
     oklab = rgb2oklab(rgb)
     max_lum = np.max(oklab)
+    if args.noisy:
+        lum_cap = 100 / 1.125
+    else:
+        lum_cap = 100 / 1.25
+    if args.max_strength == None and max_lum >= lum_cap:
+        print("Decreasing luminance on bright image with max luminance of ", max_lum)
+        oklab *= 75 / max_lum
+        rgb = oklab2rgb(oklab)
+        max_lum = 75
 
     if not args.rgb:
         # Use LAB for luminance deconvolution by default
