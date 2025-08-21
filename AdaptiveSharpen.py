@@ -96,7 +96,6 @@ def main():
         srgb *= 0.75 / max_lum
         max_lum = 0.75
     rgb = srgb_to_linear(srgb)  # Convert to linear pixels after input
-    print("Max rgb ", np.max(rgb))
 
     is_colour = len(rgb.shape) == 3
     if not is_colour:
@@ -160,7 +159,10 @@ def main():
                 current = current * damped_correction
 
                 channel_sharp = np.maximum(current, 0) + bgimg[i]
-                rgb_sharp[..., i] = rgb[..., i] * channel_sharp
+                ratio = channel_sharp / np.maximum(rgb[..., i], 1e-12)
+                if denoise:
+                    ratio = np.clip(ratio, 0.5, 2.0)
+                rgb_sharp[..., i] = rgb[..., i] * ratio
         else:
             current = lum.copy()
 
@@ -175,7 +177,10 @@ def main():
             current = current * damped_correction
 
             lum_sharp = np.maximum(current, 0) + bg
-            rgb_sharp = rgb * lum_sharp[..., np.newaxis]
+            ratio = lum_sharp / np.maximum(original_lum, 1e-12)
+            if denoise:
+                ratio = np.clip(ratio, 0.5, 2.0)
+            rgb_sharp = rgb * ratio[..., np.newaxis]
 
         local_max = np.max(rgb_sharp)
         if local_max > 1:
@@ -199,7 +204,7 @@ def main():
                 out_srgb = linear_to_srgb(out_linear)
                 out_maxlum = np.max(out_srgb)
                 if out_maxlum > max_lum * lum_boost:
-                    print(f"Used max_strength: {best_strength} out_maxlum: {out_maxlum}")
+                    print(f"Used max_strength: {best_strength}")
                     break
                 best_strength = strength
                 best_out_img = out_linear
