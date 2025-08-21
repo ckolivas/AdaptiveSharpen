@@ -297,9 +297,15 @@ def main():
             out_img = compute_sharpened(best_strength)
             print(f"Used max_strength: {best_strength}")
 
+    if args.rgb:
+        extra = "RGB"
+    elif args.oklab:
+        extra = "OK"
+    else:
+        extra = ""
     if clipped:
         print("Scaled down brightness to prevent clipping")
-    outname = base + "A" + str(int(best_strength)) + ".png"
+    outname = base + "A" + str(int(best_strength)) + extra + ".png"
     if not is_colour:
         out_img = out_img[:, :, 0]
         cv2.imwrite(outname, out_img)  # Grayscale
