@@ -19,9 +19,13 @@ If no max_strength is specified, it will iterate over incremental strengths
 trying to find an optimal strength. This is a blunt tool and should be
 fine-tuned to taste.
 
-Requirements: Python version 3 and the following libraries. These can be
-installed on the command line in windows as administrator with the following
-command after python is installed:
+Requirements: Python version 3 and the following libraries.
+
+On ubuntu linux:
+sudo apt install python3-numpy python3-scipy python3-opencv
+
+On windows as on the command line as administrator with the following command
+after python is installed:
 pip install numpy scipy opencv-python
 
 Options:
