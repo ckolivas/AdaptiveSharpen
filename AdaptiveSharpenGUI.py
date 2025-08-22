@@ -227,7 +227,7 @@ def process_image(input_path, output_path, max_strength=None, debug=False, no_co
             best_strength = strength
             best_out_img = out_linear
             strength += 1.0  # Increase by 1 each time
-            if strength > 50:  # Safety cap to prevent infinite loop
+            if strength > 200:  # Safety cap to prevent infinite loop
                 print(f"Used max_strength: {best_strength}")
                 break
         out_linear = best_out_img
