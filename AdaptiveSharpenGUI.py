@@ -232,7 +232,7 @@ def process_image(input_path, output_path, max_strength=None, debug=False, no_co
                 break
         out_linear = best_out_img
     else:
-        out_linear = compute_sharpened(best_strength, no_contrast)
+        out_linear = compute_sharpened(max_strength, no_contrast)
         print(f"Used max_strength: {max_strength}")
 
     out_srgb = linear_to_srgb(out_linear) * 65535
