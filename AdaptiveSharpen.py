@@ -41,7 +41,7 @@ def linear_to_srgb(linear):
     )
 
 def linearrgb_to_oklab(linear):
-    """Convert gamma-corrected sRGB [0,1] to Oklab (assumes D65 whitepoint)."""
+    """Convert linear RGB [0,1] to Oklab (assumes D65 whitepoint)."""
 
     # Linear RGB to LMS (first matrix)
     M1 = np.array([
@@ -64,7 +64,7 @@ def linearrgb_to_oklab(linear):
     return oklab
 
 def oklab_to_linearrgb(oklab):
-    """Convert Oklab to gamma-corrected sRGB [0,1]."""
+    """Convert Oklab to linear RGB [0,1]."""
     # Oklab to LMS' (inverse second matrix)
     M2_inv = np.array([
         [1.0000000000,  0.3963377774,  0.2158037573],
@@ -83,9 +83,9 @@ def oklab_to_linearrgb(oklab):
         [-0.0041960863, -0.7034186147,  1.7076147010]
     ])
     linear = np.einsum('ij,...j->...i', M1_inv, lms)
-    linear = np.maximum(linear, 0)  # Clip negatives to prevent invalid power
 
-    return np.clip(linear, 0, 1)  # Ensure [0,1]
+    #Returns unclipped data, may be below 0 or above 1
+    return linear
 
 def linear_rgb2lum(rgb):
     return 0.212671 * rgb[:, :, 0] + 0.715160 * rgb[:, :, 1] + 0.072169 * rgb[:, :, 2]
@@ -139,6 +139,9 @@ def main():
         print("Decreasing luminance on bright image with max luminance of ", max_lum)
         srgb *= 0.75 / max_lum
         max_lum = 0.75
+    min_lum = np.min(srgb) # Not always zero
+    lum_range = max_lum - min_lum
+
     rgb = srgb_to_linear(srgb)  # Convert to linear pixels after input
 
     is_colour = len(rgb.shape) == 3
@@ -228,8 +231,8 @@ def main():
         while True:
             out_linear = compute_sharpened(strength, fixed)
             out_srgb = linear_to_srgb(out_linear)
-            out_maxlum = np.max(out_srgb)
-            if out_maxlum > max_lum * lum_boost:
+            out_lumrange = np.max(out_srgb) - np.min(out_srgb)
+            if (out_lumrange / lum_range) > lum_boost:
                 print(f"Used max_strength: {best_strength}")
                 break
             best_strength = strength
