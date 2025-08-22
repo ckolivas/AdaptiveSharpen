@@ -1,7 +1,9 @@
 AdaptiveSharpen & AdaptiveSharpenGUI
 
 An adaptive sharpening algorithm for finishing planetary images already
-wavelet sharpened
+wavelet sharpened. It is possible to use it on unsharpened stacked images
+directly as well, though results may fall short of 2 stage sharpening. It is
+best to use images with correct colour balance as inputs.
 
 The GUI variant has a rudimentary GUI and is standalone
 
@@ -13,7 +15,9 @@ sharpened stacked images can tolerate less sharpening in low contrast areas
 before sharpening noise is generated
 
 Deconvolution is performed on OKLAB luminance to minimise chroma noise but can
-optionally be performed in colour.
+optionally be performed in colour. If your colour balance is off in the input
+image, colour balance is better maintained in RGB with the tradeoff of more
+colour noise.
 
 If no max_strength is specified, it will iterate over incremental strengths
 trying to find an optimal strength. This is a blunt tool and should be
