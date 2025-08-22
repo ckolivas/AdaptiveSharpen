@@ -105,11 +105,8 @@ def main():
     parser.add_argument('--debug', action='store_true', help='Enable debug output (saves contrast map)')
     parser.add_argument('--no_contrast', action='store_true', help='Apply fixed deconvolution strength without contrast adaptation')
     parser.add_argument('--rgb', action='store_true', help='Use RGB instead of cielab deconvolution')
-    parser.add_argument('--no_denoise', action='store_true', help='Disable denoise in dark pixels')
     parser.add_argument('--noisy', action='store_true', help='Less sharpening in low contrast for noisy images')
     args = parser.parse_args()
-
-    denoise = args.no_denoise == False
 
     image = cv2.imread(args.input, cv2.IMREAD_UNCHANGED)
     # Convert BGR(A) to RGB
@@ -154,19 +151,9 @@ def main():
     lum = linear_rgb2lum(rgb)
 
     original_lum = lum.copy()
-    if denoise:
-        bg = np.percentile(original_lum, 5)
-    else:
-        bg = np.median(original_lum)
-    lum -= bg
     lum = np.maximum(lum, 0)
 
     if args.rgb:
-        if denoise:
-            bgimg = np.percentile(rgb, 5, axis=(0,1))
-        else:
-            bgimg = np.median(rgb, axis=(0,1))
-        img = rgb - bgimg
         img = np.maximum(img, 0)
 
     window_size = 7
@@ -206,10 +193,8 @@ def main():
                 damped_correction = 1 + local_strength * (correction - 1)
                 current = current * damped_correction
 
-                channel_sharp = np.maximum(current, 0) + bgimg[i]
+                channel_sharp = np.maximum(current, 0)
                 ratio = channel_sharp / np.maximum(rgb[..., i], 1e-12)
-                if denoise:
-                    ratio = np.clip(ratio, 0.5, 2.0)
                 rgb_sharp[..., i] = rgb[..., i] * ratio
         else:
             oklab_linear = linearrgb_to_oklab(rgb)
@@ -225,10 +210,8 @@ def main():
             damped_correction = 1 + local_strength * (correction - 1)
             current = current * damped_correction
 
-            lum_sharp = np.maximum(current, 0) + bg
+            lum_sharp = np.maximum(current, 0)
             ratio = lum_sharp / np.maximum(original_lum, 1e-12)
-            if denoise:
-                ratio = np.clip(ratio, 0.5, 2.0)
             oklab_linear[..., 0] *= ratio
             rgb_sharp = oklab_to_linearrgb(oklab_linear)
 
