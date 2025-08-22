@@ -177,6 +177,8 @@ def main():
     def compute_sharpened(strength, fixed=False):
         nonlocal clipped
 
+        #Apply a fudge factor to approximate linear luminance in ok linear luminance
+        strength = strength / 3.1
         clipped = False
         if args.rgb:
             rgb_sharp = np.zeros_like(rgb)
