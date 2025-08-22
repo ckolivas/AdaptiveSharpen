@@ -222,6 +222,7 @@ def main():
             clipped = True
             rgb_sharp *= 1 / local_max
 
+        rgb_sharp = np.clip(rgb_sharp, 0, 1)
         return rgb_sharp
 
     if args.max_strength is None:
