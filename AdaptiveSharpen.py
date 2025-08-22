@@ -132,9 +132,11 @@ def main():
     srgb = image.astype(np.float32) / max_intensity
     max_lum = np.max(srgb)
     if args.noisy:
-        lum_cap = 1.0 / 1.125
+        lum_boost = 1.125
     else:
-        lum_cap = 1.0 / 1.25
+        lum_boost = 1.25
+    lum_cap = 1.0 / lum_boost
+
     if args.max_strength == None and max_lum >= lum_cap:
         print("Decreasing luminance on bright image with max luminance of ", max_lum)
         srgb *= 0.75 / max_lum
@@ -154,7 +156,7 @@ def main():
     lum = np.maximum(lum, 0)
 
     if args.rgb:
-        img = np.maximum(img, 0)
+        img = np.maximum(rgb, 0)
 
     window_size = 7
     contrast = std_windowed(lum, (window_size, window_size))
@@ -169,16 +171,9 @@ def main():
         debug_img = np.clip(contrast_norm * 65535, 0, 65535).astype(np.uint16)
         cv2.imwrite(base + '_debug.png', debug_img)
 
-    if args.noisy:
-        lum_boost = 1.125
-    else:
-        lum_boost = 1.25
-
     def compute_sharpened(strength, fixed=False):
         nonlocal clipped
 
-        #Apply a fudge factor to approximate linear luminance in ok linear luminance
-        strength = strength / 3.1
         clipped = False
         if args.rgb:
             rgb_sharp = np.zeros_like(rgb)
@@ -199,6 +194,10 @@ def main():
                 ratio = channel_sharp / np.maximum(rgb[..., i], 1e-12)
                 rgb_sharp[..., i] = rgb[..., i] * ratio
         else:
+            #Apply a fudge factor to approximate linear luminance in ok linear
+            #luminance and give more gradation
+            strength = strength / 3.14
+
             oklab_linear = linearrgb_to_oklab(rgb)
             current = lum.copy()
 

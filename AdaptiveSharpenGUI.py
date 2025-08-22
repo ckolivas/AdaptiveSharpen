@@ -17,7 +17,6 @@ import numpy as np
 from scipy.signal import fftconvolve
 from scipy.ndimage import generic_filter
 import cv2
-from skimage.color import rgb2lab, lab2rgb
 from numpy.lib.stride_tricks import sliding_window_view
 import tkinter as tk
 from tkinter import filedialog, messagebox
@@ -48,10 +47,8 @@ def linear_to_srgb(linear):
         1.055 * (linear ** (1 / 2.4)) - 0.055
     )
 
-def rgb2oklab(rgb):
+def linearrgb_to_oklab(linear):
     """Convert gamma-corrected sRGB [0,1] to Oklab (assumes D65 whitepoint)."""
-    # Linearize
-    linear = srgb_to_linear(rgb)
 
     # Linear RGB to LMS (first matrix)
     M1 = np.array([
@@ -71,10 +68,9 @@ def rgb2oklab(rgb):
         [0.0259040371, 0.7827717662, -0.8086757660]
     ])
     oklab = np.einsum('ij,...j->...i', M2, lms_prime)
-    return oklab * 100
+    return oklab
 
-def oklab2rgb(oklab):
-    oklab /= 100
+def oklab_to_linearrgb(oklab):
     """Convert Oklab to gamma-corrected sRGB [0,1]."""
     # Oklab to LMS' (inverse second matrix)
     M2_inv = np.array([
@@ -96,23 +92,17 @@ def oklab2rgb(oklab):
     linear = np.einsum('ij,...j->...i', M1_inv, lms)
     linear = np.maximum(linear, 0)  # Clip negatives to prevent invalid power
 
-    # Gamma correct
-    srgb = linear_to_srgb(linear)
-    return np.clip(srgb, 0, 1)  # Ensure [0,1]
+    return np.clip(linear, 0, 1)  # Ensure [0,1]
 
-def rgb2lum(rgb):
-    return 0.299 * rgb[:, :, 0] + 0.587 * rgb[:, :, 1] + 0.114 * rgb[:, :, 2]
+def linear_rgb2lum(rgb):
+    return 0.212671 * rgb[:, :, 0] + 0.715160 * rgb[:, :, 1] + 0.072169 * rgb[:, :, 2]
 
 def std_windowed(img, win_size):
     win_h, win_w = win_size
     win_view = sliding_window_view(img, (win_h, win_w), axis=(0, 1))
     return win_view.std(axis=(-2, -1))
 
-def process_image(input_path, output_path, max_strength=None, debug=False, no_contrast=False, oklab=False, rgb=False, no_denoise=False):
-    if oklab and rgb:
-        raise ValueError("Cannot use both oklab and rgb")
-
-    denoise = not no_denoise
+def process_image(input_path, output_path, max_strength=None, debug=False, no_contrast=False, rgb_sharpen = False, noisy=False):
 
     image = cv2.imread(input_path, cv2.IMREAD_UNCHANGED)
     # Convert BGR(A) to RGB
@@ -130,49 +120,36 @@ def process_image(input_path, output_path, max_strength=None, debug=False, no_co
     else:
         raise ValueError("Unsupported image dtype")
 
-    rgb_img = image.astype(np.float32) / max_intensity  # Renamed to avoid conflict with 'rgb' flag
+    clipped = False
 
-    is_colour = len(rgb_img.shape) == 3
+    srgb = image.astype(np.float32) / max_intensity
+    max_lum = np.max(srgb)
+    if noisy:
+        lum_boost = 1.125
+    else:
+        lum_boost = 1.25
+    lum_cap = 1.0 / lum_boost
+
+    if max_strength == None and max_lum >= lum_cap:
+        print("Decreasing luminance on bright image with max luminance of ", max_lum)
+        srgb *= 0.75 / max_lum
+        max_lum = 0.75
+    rgb = srgb_to_linear(srgb)  # Convert to linear pixels after input
+
+    is_colour = len(rgb.shape) == 3
     if not is_colour:
-        rgb_img = np.dstack((rgb_img, rgb_img, rgb_img))
+        rgb = np.dstack((rgb, rgb, rgb))
     print("Processing ", input_path)
 
     psf = generate_moffat_kernel(gamma=1.0, beta=2.0, size=21)
 
-    #Use oklab to preserve colours
-    oklum = rgb2oklab(rgb_img)
-    max_lum = np.max(oklum)
-    if max_lum > 80:
-        print("Decreasing luminance on bright image with max luminance of ", max_lum)
-        oklum *= 75 / max_lum
-        rgb_img = oklab2rgb(oklum)
-        max_lum = 75
-
-    if not rgb:
-        # Use LAB for luminance deconvolution by default
-        if oklab:
-            lab = rgb2oklab(rgb_img)
-        else:
-            lab = rgb2lab(rgb_img, illuminant='D65')
-        lum = lab[..., 0] / 100.0
-    else:
-        lum = rgb2lum(rgb_img)
+    lum = linear_rgb2lum(rgb)
 
     original_lum = lum.copy()
-    if denoise:
-        bg = np.percentile(original_lum, 5)
-    else:
-        bg = np.median(original_lum)
-    lum -= bg
     lum = np.maximum(lum, 0)
 
-    if rgb:
-        if denoise:
-            bgimg = np.percentile(rgb_img, 5, axis=(0,1))
-        else:
-            bgimg = np.median(rgb_img, axis=(0,1))
-        img = rgb_img - bgimg
-        img = np.maximum(img, 0)
+    if rgb_sharpen:
+        img = np.maximum(rgb, 0)
 
     window_size = 7
     contrast = std_windowed(lum, (window_size, window_size))
@@ -188,13 +165,16 @@ def process_image(input_path, output_path, max_strength=None, debug=False, no_co
         cv2.imwrite(output_path + '_debug.png', debug_img)
 
     def compute_sharpened(strength, fixed=False):
-        if rgb:
+        nonlocal clipped
+
+        clipped = False
+        if rgb_sharpen:
             rgb_sharp = np.zeros_like(img)
             for i in range(3):
                 current = img[..., i].copy()
 
                 conv = fftconvolve(current, psf, mode='same')
-                relative = img[...,i] / np.maximum(conv, 1e-12)
+                relative = current / np.maximum(conv, 1e-12)
                 correction = fftconvolve(relative, psf, mode='same')
                 if fixed:
                     local_strength = strength
@@ -204,18 +184,18 @@ def process_image(input_path, output_path, max_strength=None, debug=False, no_co
                 current = current * damped_correction
 
                 channel_sharp = np.maximum(current, 0)
-                channel_sharp += bgimg[i]
-
-                rgb_sharp[..., i] = rgb_img[..., i]
-                ratio = channel_sharp / np.maximum(rgb_img[..., i], 1e-12)
-                if denoise:
-                    ratio = np.clip(ratio, 0.5, 2.0)
-                rgb_sharp[..., i] *= ratio
+                ratio = channel_sharp / np.maximum(rgb[..., i], 1e-12)
+                rgb_sharp[..., i] = rgb[..., i] * ratio
         else:
+            #Apply a fudge factor to approximate linear luminance in ok linear
+            #luminance and give more gradation
+            strength = strength / 3.14
+
+            oklab_linear = linearrgb_to_oklab(rgb)
             current = lum.copy()
 
             conv = fftconvolve(current, psf, mode='same')
-            relative = lum / np.maximum(conv, 1e-12)
+            relative = current / np.maximum(conv, 1e-12)
             correction = fftconvolve(relative, psf, mode='same')
             if fixed:
                 local_strength = strength
@@ -225,45 +205,45 @@ def process_image(input_path, output_path, max_strength=None, debug=False, no_co
             current = current * damped_correction
 
             lum_sharp = np.maximum(current, 0)
-            lum_sharp += bg
-
-            lab_sharp = lab.copy()
             ratio = lum_sharp / np.maximum(original_lum, 1e-12)
-            if denoise:
-                ratio = np.clip(ratio, 0.5, 2.0)
-            lab_sharp[..., 0] = lab[..., 0] * ratio  # Fixed: original had lum_sharp * 100, but then *= ratio; adjusted
-            if oklab:
-                rgb_sharp = oklab2rgb(lab_sharp)
-            else:
-                rgb_sharp = lab2rgb(lab_sharp, illuminant='D65')
+            oklab_linear[..., 0] *= ratio
+            rgb_sharp = oklab_to_linearrgb(oklab_linear)
 
-        return np.clip(rgb_sharp * 65535, 0, 65535).astype(np.uint16)
+        local_max = np.max(rgb_sharp)
+        if local_max > 1:
+            clipped = True
+            rgb_sharp *= 1 / local_max
+
+        return rgb_sharp
 
     if no_contrast:
         strength = max_strength if max_strength is not None else 10.0
-        out_img = compute_sharpened(strength, fixed=True)
-        print(f"Used max_strength: {strength}")
+        out_linear = compute_sharpened(strength, fixed=True)
     else:
         if max_strength is None:
             strength = 1.0
             best_strength = 1.0
             best_out_img = compute_sharpened(strength)
             while True:
-                out_img = compute_sharpened(strength)
-                out_lum = rgb2oklab(out_img / 65535)
-                out_maxlum = np.max(out_lum)
-                if out_maxlum > max_lum * 1.25:
+                out_linear = compute_sharpened(strength)
+                out_srgb = linear_to_srgb(out_linear)
+                out_maxlum = np.max(out_srgb)
+                if out_maxlum > max_lum * lum_boost:
                     print(f"Used max_strength: {best_strength}")
                     break
                 best_strength = strength
-                best_out_img = out_img
+                best_out_img = out_linear
                 strength += 1.0  # Increase by 1 each time
                 if strength > 50:  # Safety cap to prevent infinite loop
                     print(f"Used max_strength: {best_strength}")
                     break
+            out_linear = best_out_img
         else:
-            out_img = compute_sharpened(max_strength)
+            out_linear = compute_sharpened(best_strength)
             print(f"Used max_strength: {max_strength}")
+
+    out_srgb = linear_to_srgb(out_linear) * 65535
+    out_img = out_srgb.astype(np.uint16)
 
     if not is_colour:
         out_img = out_img[:, :, 0]
@@ -278,12 +258,11 @@ def main():
     parser.add_argument('--max_strength', type=float, default=None, help='Maximum deconvolution strength (default: auto; higher values for more aggressive sharpening)')
     parser.add_argument('--debug', action='store_true', help='Enable debug output (saves contrast map)')
     parser.add_argument('--no_contrast', action='store_true', help='Apply fixed deconvolution strength without contrast adaptation')
-    parser.add_argument('--oklab', action='store_true', help='Use OKlab instead of cielab deconvolution')
     parser.add_argument('--rgb', action='store_true', help='Use RGB instead of cielab deconvolution')
-    parser.add_argument('--no_denoise', action='store_true', help='Disable denoise in dark pixels')
+    parser.add_argument('--noisy', action='store_true', help='Use less max_strength in auto for noisy images')
     args = parser.parse_args()
 
-    process_image(args.input, args.output, max_strength=args.max_strength, debug=args.debug, no_contrast=args.no_contrast, oklab=args.oklab, rgb=args.rgb, no_denoise=args.no_denoise)
+    process_image(args.input, args.output, max_strength=args.max_strength, debug=args.debug, no_contrast=args.no_contrast, rgb_sharpen=args.rgb, noisy=args.noisy)
 
 def run_gui():
     def select_input():
@@ -298,7 +277,7 @@ def run_gui():
             ms = float(max_strength_entry.get()) if max_strength_entry.get() else None
             process_image(input_path.get(), output_path.get(), max_strength=ms,
                           debug=debug_var.get(), no_contrast=no_contrast_var.get(),
-                          oklab=oklab_var.get(), rgb=rgb_var.get(), no_denoise=no_denoise_var.get())
+                          rgb_sharpen=rgb_var.get(), noisy=noisy_var.get())
             messagebox.showinfo("Success", "Processing complete!")
         except ValueError as e:
             messagebox.showerror("Error", f"Invalid input: {e}")
@@ -309,14 +288,11 @@ def run_gui():
         if not input_path.get() or not output_path.get():
             messagebox.showwarning("Input Required", "Select input and output files.")
             return
-        if oklab_var.get() and rgb_var.get():
-            messagebox.showerror("Error", "Cannot use both oklab and rgb")
-            return
         threading.Thread(target=run_processing).start()  # Run in background
 
     root = tk.Tk()
     root.title("Adaptive Sharpen GUI")
-    root.geometry("400x600")  # Simple size
+    root.geometry("400x500")  # Simple size
 
     # Input file
     tk.Label(root, text="Input PNG:").pack()
@@ -341,14 +317,11 @@ def run_gui():
     no_contrast_var = tk.BooleanVar()
     tk.Checkbutton(root, text="No Contrast Adaptation", variable=no_contrast_var).pack()
 
-    oklab_var = tk.BooleanVar()
-    tk.Checkbutton(root, text="Use OKlab", variable=oklab_var).pack()
-
     rgb_var = tk.BooleanVar()
     tk.Checkbutton(root, text="Use RGB", variable=rgb_var).pack()
 
-    no_denoise_var = tk.BooleanVar()
-    tk.Checkbutton(root, text="No Denoise", variable=no_denoise_var).pack()
+    noisy_var = tk.BooleanVar()
+    tk.Checkbutton(root, text="Noisy image", variable=noisy_var).pack()
 
     # Run button
     tk.Button(root, text="Run Sharpening", command=start_processing).pack(pady=10)
