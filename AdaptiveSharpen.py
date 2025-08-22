@@ -125,6 +125,7 @@ def main():
         raise ValueError("Unsupported image dtype")
 
     clipped = False
+    fixed = args.no_contrast
 
     base = os.path.basename(args.input)
     base = base[:-len('.png')]
@@ -223,42 +224,38 @@ def main():
 
         return rgb_sharp
 
-    if args.no_contrast:
-        strength = args.max_strength if args.max_strength is not None else 10.0
-        best_strength = strength
-        out_linear = compute_sharpened(strength, fixed=True)
-        print(f"Used max_strength: {strength}")
+    if args.max_strength is None:
+        strength = 1.0
+        best_strength = 1.0
+        best_out_img = compute_sharpened(strength, fixed)
+        while True:
+            out_linear = compute_sharpened(strength, fixed)
+            out_srgb = linear_to_srgb(out_linear)
+            out_maxlum = np.max(out_srgb)
+            if out_maxlum > max_lum * lum_boost:
+                print(f"Used max_strength: {best_strength}")
+                break
+            best_strength = strength
+            best_out_img = out_linear
+            strength += 1.0  # Increase by 1 each time
+            if strength > 50:  # Safety cap to prevent infinite loop
+                print(f"Used max_strength: {best_strength}")
+                break
+        out_linear = best_out_img
     else:
-        if args.max_strength is None:
-            strength = 1.0
-            best_strength = 1.0
-            best_out_img = compute_sharpened(strength)
-            while True:
-                out_linear = compute_sharpened(strength)
-                out_srgb = linear_to_srgb(out_linear)
-                out_maxlum = np.max(out_srgb)
-                if out_maxlum > max_lum * lum_boost:
-                    print(f"Used max_strength: {best_strength}")
-                    break
-                best_strength = strength
-                best_out_img = out_linear
-                strength += 1.0  # Increase by 1 each time
-                if strength > 50:  # Safety cap to prevent infinite loop
-                    print(f"Used max_strength: {best_strength}")
-                    break
-            out_linear = best_out_img
-        else:
-            best_strength = args.max_strength
-            out_linear = compute_sharpened(best_strength)
-            print(f"Used max_strength: {best_strength}")
+        best_strength = args.max_strength
+        out_linear = compute_sharpened(best_strength, fixed)
+        print(f"Used max_strength: {best_strength}")
 
     out_srgb = linear_to_srgb(out_linear) * 65535
     out_img = out_srgb.astype(np.uint16)
 
+    extra = ""
     if args.rgb:
-        extra = "RGB"
-    else:
-        extra = ""
+        extra += "RGB"
+    if fixed:
+        extra += "NC"
+
     if clipped:
         print("Scaled down brightness to prevent clipping")
     outname = base + "A" + str(int(best_strength)) + extra + ".png"

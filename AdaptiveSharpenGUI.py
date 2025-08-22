@@ -216,31 +216,27 @@ def process_image(input_path, output_path, max_strength=None, debug=False, no_co
 
         return rgb_sharp
 
-    if no_contrast:
-        strength = max_strength if max_strength is not None else 10.0
-        out_linear = compute_sharpened(strength, fixed=True)
+    if max_strength is None:
+        strength = 1.0
+        best_strength = 1.0
+        best_out_img = compute_sharpened(strength, no_contrast)
+        while True:
+            out_linear = compute_sharpened(strength, no_contrast)
+            out_srgb = linear_to_srgb(out_linear)
+            out_maxlum = np.max(out_srgb)
+            if out_maxlum > max_lum * lum_boost:
+                print(f"Used max_strength: {best_strength}")
+                break
+            best_strength = strength
+            best_out_img = out_linear
+            strength += 1.0  # Increase by 1 each time
+            if strength > 50:  # Safety cap to prevent infinite loop
+                print(f"Used max_strength: {best_strength}")
+                break
+        out_linear = best_out_img
     else:
-        if max_strength is None:
-            strength = 1.0
-            best_strength = 1.0
-            best_out_img = compute_sharpened(strength)
-            while True:
-                out_linear = compute_sharpened(strength)
-                out_srgb = linear_to_srgb(out_linear)
-                out_maxlum = np.max(out_srgb)
-                if out_maxlum > max_lum * lum_boost:
-                    print(f"Used max_strength: {best_strength}")
-                    break
-                best_strength = strength
-                best_out_img = out_linear
-                strength += 1.0  # Increase by 1 each time
-                if strength > 50:  # Safety cap to prevent infinite loop
-                    print(f"Used max_strength: {best_strength}")
-                    break
-            out_linear = best_out_img
-        else:
-            out_linear = compute_sharpened(best_strength)
-            print(f"Used max_strength: {max_strength}")
+        out_linear = compute_sharpened(best_strength, no_contrast)
+        print(f"Used max_strength: {max_strength}")
 
     out_srgb = linear_to_srgb(out_linear) * 65535
     out_img = out_srgb.astype(np.uint16)
