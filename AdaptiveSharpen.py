@@ -8,9 +8,6 @@
 # Uses deconvolution of varied strength dependent on the local contrast as
 # sharpened stacked images can tolerate less sharpening in low contrast areas
 # before sharpening noise is generated
-#
-# Automatic detection of the optimal max_strength is a blunt tool that expects
-# an initially stacked image with a max histogram stretched to 70%
 
 import os
 import argparse

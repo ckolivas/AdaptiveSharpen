@@ -1,0 +1,44 @@
+AdaptiveSharpen & AdaptiveSharpenGUI
+
+An adaptive sharpening algorithm for finishing planetary images already
+wavelet sharpened
+
+The GUI variant has a rudimentary GUI and is standalone
+
+The command line version automatically chooses an output filename based on the
+input file which describes the parameters used in sharpening.
+
+Uses deconvolution of varied strength dependent on the local contrast as
+sharpened stacked images can tolerate less sharpening in low contrast areas
+before sharpening noise is generated
+
+Deconvolution is performed on OKLAB luminance to minimise chroma noise but can
+optionally be performed in colour.
+
+If no max_strength is specified, it will iterate over incremental strengths
+trying to find an optimal strength. This is a blunt tool and should be
+fine-tuned to taste.
+
+Requirements: Python version 3 and the following libraries. These can be
+installed on the command line in windows as administrator with the following
+command after python is installed:
+pip install numpy scipy opencv-python
+
+Options:
+--no_contrast
+Disables contrast dependent sharpening behaving like regular R-L deconvolution
+
+--max_strength
+Determines the maximum strength of deconvolution if specified. A good starting
+value is 10.
+
+--noisy
+Uses less aggressive endpoints for determining optimal strength automatically.
+
+--rgb
+Performs convolution on each colour separately. This may lead to better colour
+preservation but more colour noise.
+
+--debug
+Outputs a contrast map PNG which is used internally to determine where to
+sharpen more aggressively.
