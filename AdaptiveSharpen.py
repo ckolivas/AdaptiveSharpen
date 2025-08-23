@@ -135,6 +135,13 @@ def main():
         lum_boost = 1.25
     lum_cap = 1.0 / lum_boost
 
+    if args.debug:
+        print(f"Max sRGB Red: {np.max(srgb[..., 0])} Green: {np.max(srgb[..., 1])} Blue: {np.max(srgb[..., 2])}")
+        rgb = srgb_to_linear(srgb)
+        print(f"Max Linear Red: {np.max(rgb[..., 0])} Green: {np.max(rgb[..., 1])} Blue: {np.max(rgb[..., 2])}")
+        oklab = linearrgb_to_oklab(rgb)
+        print(f"Min luminance: {np.min(oklab[..., 0])}")
+        print(f"Max luminance: {np.max(oklab[..., 0])}")
     if args.max_strength == None and max_lum >= lum_cap:
         print("Decreasing luminance on bright image with max luminance of ", max_lum)
         srgb *= 0.75 / max_lum
@@ -154,6 +161,10 @@ def main():
     lum = linear_rgb2lum(rgb)
 
     original_lum = lum.copy()
+    if not args.rgb:
+        lum_denominator = np.maximum(original_lum, 1e-12)
+    else:
+        rgblum_denominator = np.maximum(rgb, 1e-12)
     lum = np.maximum(lum, 0)
 
     if args.rgb:
@@ -192,7 +203,7 @@ def main():
                 current = current * damped_correction
 
                 channel_sharp = np.maximum(current, 0)
-                ratio = channel_sharp / np.maximum(rgb[..., i], 1e-12)
+                ratio = channel_sharp / rgblum_denominator[..., i]
                 rgb_sharp[..., i] = rgb[..., i] * ratio
         else:
             #Apply a fudge factor to approximate linear luminance in ok linear
@@ -213,7 +224,7 @@ def main():
             current = current * damped_correction
 
             lum_sharp = np.maximum(current, 0)
-            ratio = lum_sharp / np.maximum(original_lum, 1e-12)
+            ratio = lum_sharp / lum_denominator
             oklab_linear[..., 0] *= ratio
             rgb_sharp = oklab_to_linearrgb(oklab_linear)
 
