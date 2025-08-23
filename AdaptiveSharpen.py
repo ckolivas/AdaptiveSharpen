@@ -133,7 +133,6 @@ def main():
         lum_boost = 1.125
     else:
         lum_boost = 1.25
-    lum_cap = 1.0 / lum_boost
 
     if args.debug:
         print(f"Max sRGB Red: {np.max(srgb[..., 0])} Green: {np.max(srgb[..., 1])} Blue: {np.max(srgb[..., 2])}")
@@ -142,12 +141,6 @@ def main():
         oklab = linearrgb_to_oklab(rgb)
         print(f"Min luminance: {np.min(oklab[..., 0])}")
         print(f"Max luminance: {np.max(oklab[..., 0])}")
-    if args.max_strength == None and max_lum >= lum_cap:
-        print("Decreasing luminance on bright image with max luminance of ", max_lum)
-        srgb *= 0.75 / max_lum
-        max_lum = 0.75
-    min_lum = np.min(srgb) # Not always zero
-    lum_range = max_lum - min_lum
 
     rgb = srgb_to_linear(srgb)  # Convert to linear pixels after input
 
@@ -243,8 +236,12 @@ def main():
         while True:
             out_linear = compute_sharpened(strength, fixed)
             out_srgb = linear_to_srgb(out_linear)
-            out_lumrange = np.max(out_srgb) - np.min(out_srgb)
-            if (out_lumrange / lum_range) > lum_boost:
+            out_lum = linear_rgb2lum(out_linear)
+            lum_ratio = (out_lum + 1e-12) / (original_lum + 1e-12)
+            max_lumratio = np.max(lum_ratio)
+            #min_lumratio = np.min(lum_ratio)
+            if max_lumratio > lum_boost: #or min_lumratio < 1 / lum_boost:
+                #print(f"Min ratio: {min_lumratio} Max ratio: {max_lumratio}")
                 print(f"Used max_strength: {best_strength}")
                 break
             best_strength = strength
