@@ -248,9 +248,7 @@ def main():
             out_lum = linear_rgb2lum(out_linear)
             lum_ratio = (out_lum + 1e-12) / (original_lum + 1e-12)
             max_lumratio = np.max(lum_ratio)
-            #min_lumratio = np.min(lum_ratio)
-            if max_lumratio > lum_boost:# or min_lumratio < 1 / lum_boost:
-                #print(f"Min ratio: {min_lumratio} Max ratio: {max_lumratio}")
+            if max_lumratio > lum_boost:
                 print(f"Used max_strength: {best_strength}")
                 break
             best_strength = strength
