@@ -130,9 +130,9 @@ def main():
     srgb = image.astype(np.float32) / max_intensity
     max_lum = np.max(srgb)
     if args.noisy:
-        lum_boost = 1.125
+        lum_boost = 1.33
     else:
-        lum_boost = 1.25
+        lum_boost = 1.66
     lum_cap = 1.0 / lum_boost
 
     if args.debug:
@@ -143,9 +143,9 @@ def main():
         print(f"Min luminance: {np.min(oklab[..., 0])}")
         print(f"Max luminance: {np.max(oklab[..., 0])}")
     if args.max_strength == None and max_lum >= lum_cap:
-        print("Decreasing luminance on bright image with max luminance of ", max_lum)
-        srgb *= 0.75 / max_lum
-        max_lum = 0.75
+        srgb *= lum_cap / max_lum
+        max_lum = lum_cap
+        compressed = True
 
     rgb = srgb_to_linear(srgb)  # Convert to linear pixels after input
 
@@ -261,7 +261,13 @@ def main():
         out_linear = compute_sharpened(best_strength, fixed)
         print(f"Used max_strength: {best_strength}")
 
-    out_srgb = linear_to_srgb(out_linear) * 65535
+    out_srgb = linear_to_srgb(out_linear)
+    if compressed or clipped:
+        srgb_max = np.max(out_srgb)
+        if srgb_max > 0 and srgb_max < 1:
+            out_srgb *= 1 / srgb_max
+            print("Brightness adjusted to avoid clipping")
+    out_srgb *= 65535
     out_img = out_srgb.astype(np.uint16)
 
     extra = ""
@@ -270,8 +276,6 @@ def main():
     if fixed:
         extra += "NC"
 
-    if clipped:
-        print("Scaled down brightness to prevent clipping")
     outname = base + "A" + str(int(best_strength)) + extra + ".png"
     if not is_colour:
         out_img = out_img[:, :, 0]
