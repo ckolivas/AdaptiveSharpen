@@ -206,9 +206,12 @@ def main():
                 rgb_sharp[..., i] = rgb[..., i] * ratio
         else:
             #Apply a fudge factor to approximate linear luminance in ok linear
-            #luminance and give more gradation
+            #luminance and give more gradation and more closely match strength
+            #achieved in RGB
             strength = strength / 3.14
 
+            #Use oklab to minimise colour shifts of operating on luminance, this
+            #assumes input image has correct colour balance to begin with
             oklab_linear = linearrgb_to_oklab(rgb)
             current = lum.copy()
 
