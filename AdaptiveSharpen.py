@@ -167,7 +167,7 @@ def main():
         rgblum_denominator = np.maximum(rgb, 1e-12)
         img = np.maximum(rgb, 0)
 
-   lum = np.maximum(lum, 0)
+    lum = np.maximum(lum, 0)
 
     window_size = 7
     contrast = std_windowed(lum, (window_size, window_size))
@@ -249,7 +249,7 @@ def main():
             lum_ratio = (out_lum + 1e-12) / (original_lum + 1e-12)
             max_lumratio = np.max(lum_ratio)
             #min_lumratio = np.min(lum_ratio)
-            if max_lumratio > lum_boost: #or min_lumratio < 1 / lum_boost:
+            if max_lumratio > lum_boost:# or min_lumratio < 1 / lum_boost:
                 #print(f"Min ratio: {min_lumratio} Max ratio: {max_lumratio}")
                 print(f"Used max_strength: {best_strength}")
                 break
