@@ -133,6 +133,7 @@ def main():
         lum_boost = 1.125
     else:
         lum_boost = 1.25
+    lum_cap = 1.0 / lum_boost
 
     if args.debug:
         print(f"Max sRGB Red: {np.max(srgb[..., 0])} Green: {np.max(srgb[..., 1])} Blue: {np.max(srgb[..., 2])}")
@@ -141,6 +142,10 @@ def main():
         oklab = linearrgb_to_oklab(rgb)
         print(f"Min luminance: {np.min(oklab[..., 0])}")
         print(f"Max luminance: {np.max(oklab[..., 0])}")
+    if args.max_strength == None and max_lum >= lum_cap:
+        print("Decreasing luminance on bright image with max luminance of ", max_lum)
+        srgb *= 0.75 / max_lum
+        max_lum = 0.75
 
     rgb = srgb_to_linear(srgb)  # Convert to linear pixels after input
 
