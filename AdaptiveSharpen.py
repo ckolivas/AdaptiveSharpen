@@ -165,10 +165,9 @@ def main():
         lum_denominator = np.maximum(original_lum, 1e-12)
     else:
         rgblum_denominator = np.maximum(rgb, 1e-12)
-    lum = np.maximum(lum, 0)
-
-    if args.rgb:
         img = np.maximum(rgb, 0)
+
+   lum = np.maximum(lum, 0)
 
     window_size = 7
     contrast = std_windowed(lum, (window_size, window_size))
