@@ -146,6 +146,8 @@ def main():
         srgb *= lum_cap / max_lum
         max_lum = lum_cap
         compressed = True
+    else:
+        compressed = False
 
     rgb = srgb_to_linear(srgb)  # Convert to linear pixels after input
 
