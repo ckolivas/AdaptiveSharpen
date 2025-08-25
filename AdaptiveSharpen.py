@@ -103,6 +103,7 @@ def main():
     parser.add_argument('--no_contrast', action='store_true', help='Apply fixed deconvolution strength without contrast adaptation')
     parser.add_argument('--rgb', action='store_true', help='Use RGB instead of cielab deconvolution')
     parser.add_argument('--noisy', action='store_true', help='Less sharpening in low contrast for noisy images')
+    parser.add_argument('--psf_file', type=str, default=None, help='Path to custom PSF .npy file (e.g., for astigmatism correction; overrides Moffat kernel)')  # NEW: Argument for custom PSF
     args = parser.parse_args()
 
     image = cv2.imread(args.input, cv2.IMREAD_UNCHANGED)
@@ -156,7 +157,19 @@ def main():
         rgb = np.dstack((rgb, rgb, rgb))
     print("Processing ", args.input)
 
-    psf = generate_moffat_kernel(gamma=1.0, beta=2.0, size=21)
+    # NEW: Load custom PSF if provided, else generate Moffat
+    if args.psf_file:
+        psf = np.load(args.psf_file)
+        if psf.ndim != 2:
+            raise ValueError("Custom PSF must be a 2D array")
+        if psf.shape[0] != psf.shape[1] or psf.shape[0] % 2 == 0:
+            print("Warning: PSF should be odd-sized square for best centering; consider resizing")
+        psf_sum = np.sum(psf)
+        if abs(psf_sum - 1.0) > 1e-6:
+            psf /= psf_sum  # Re-normalize if needed
+        print(f"Using custom PSF from {args.psf_file} (shape: {psf.shape}, sum: {np.sum(psf)})")
+    else:
+        psf = generate_moffat_kernel(gamma=1.0, beta=2.0, size=21)
 
     lum = linear_rgb2lum(rgb)
 
