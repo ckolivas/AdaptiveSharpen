@@ -103,7 +103,7 @@ def main():
     parser.add_argument('--no_contrast', action='store_true', help='Apply fixed deconvolution strength without contrast adaptation')
     parser.add_argument('--rgb', action='store_true', help='Use RGB instead of cielab deconvolution')
     parser.add_argument('--noisy', action='store_true', help='Less sharpening in low contrast for noisy images')
-    parser.add_argument('--psf_file', type=str, default=None, help='Path to custom PSF .npy file (e.g., for astigmatism correction; overrides Moffat kernel)')  # NEW: Argument for custom PSF
+    parser.add_argument('--psf_file', type=str, default=None, help='Path to custom PSF .npy file (e.g., for astigmatism correction; overrides Moffat kernel)')
     args = parser.parse_args()
 
     image = cv2.imread(args.input, cv2.IMREAD_UNCHANGED)
@@ -157,19 +157,25 @@ def main():
         rgb = np.dstack((rgb, rgb, rgb))
     print("Processing ", args.input)
 
-    # NEW: Load custom PSF if provided, else generate Moffat
+    # Load custom PSF if provided, else generate Moffat
     if args.psf_file:
         psf = np.load(args.psf_file)
-        if psf.ndim != 2:
-            raise ValueError("Custom PSF must be a 2D array")
+        if psf.ndim == 2:
+            pass  # Mono PSF
+        elif psf.ndim == 3 and psf.shape[2] == 3:
+            # Normalize per channel
+            for ch in range(3):
+                psf_sum = np.sum(psf[:, :, ch])
+                if abs(psf_sum - 1.0) > 1e-6 and psf_sum != 0:
+                    psf[:, :, ch] /= psf_sum
+        else:
+            raise ValueError(f"Unsupported PSF shape: {psf.shape}. Expected 2D or (h, w, 3).")
         if psf.shape[0] != psf.shape[1] or psf.shape[0] % 2 == 0:
             print("Warning: PSF should be odd-sized square for best centering; consider resizing")
-        psf_sum = np.sum(psf)
-        if abs(psf_sum - 1.0) > 1e-6:
-            psf /= psf_sum  # Re-normalize if needed
         print(f"Using custom PSF from {args.psf_file} (shape: {psf.shape}, sum: {np.sum(psf)})")
     else:
         psf = generate_moffat_kernel(gamma=1.0, beta=2.0, size=21)
+        print("Using default Moffat PSF")
 
     lum = linear_rgb2lum(rgb)
 
@@ -203,10 +209,11 @@ def main():
             rgb_sharp = np.zeros_like(rgb)
             for i in range(3):
                 current = img[..., i].copy()
+                psf_ch = psf[:, :, i] if psf.ndim == 3 else psf
 
-                conv = fftconvolve(current, psf, mode='same')
+                conv = fftconvolve(current, psf_ch, mode='same')
                 relative = current / np.maximum(conv, 1e-12)
-                correction = fftconvolve(relative, psf, mode='same')
+                correction = fftconvolve(relative, psf_ch, mode='same')
                 if fixed:
                     local_strength = strength
                 else:
@@ -228,9 +235,10 @@ def main():
             oklab_linear = linearrgb_to_oklab(rgb)
             current = lum.copy()
 
-            conv = fftconvolve(current, psf, mode='same')
+            psf_lum = np.mean(psf, axis=-1) if psf.ndim == 3 else psf
+            conv = fftconvolve(current, psf_lum, mode='same')
             relative = current / np.maximum(conv, 1e-12)
-            correction = fftconvolve(relative, psf, mode='same')
+            correction = fftconvolve(relative, psf_lum, mode='same')
             if fixed:
                 local_strength = strength
             else:
