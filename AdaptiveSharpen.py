@@ -144,7 +144,10 @@ def main():
         print(f"Min luminance: {np.min(oklab[..., 0])}")
         print(f"Max luminance: {np.max(oklab[..., 0])}")
     if args.max_strength == None and max_lum >= lum_cap:
-        srgb *= lum_cap / max_lum
+        compression = lum_cap / max_lum
+        srgb *= compression
+        if args.debug:
+            print("Compressed ", compression)
         max_lum = lum_cap
         compressed = True
     else:
@@ -286,11 +289,25 @@ def main():
         print(f"Used max_strength: {best_strength}")
 
     out_srgb = linear_to_srgb(out_linear)
-    if compressed or clipped:
-        srgb_max = np.max(out_srgb)
+    srgb_max = np.max(out_srgb)
+    if compressed:
+        #Restore compression
+        if srgb_max / compression <= 1.0:
+            srgb_max /= compression
+            if args.debug:
+                print("Expansion ", 1.0 / compression)
+            compressed = False
+        else:
+            #Otherwise stretch to 1
+            expansion = 1.0 / srgb_max
+            if args.debug:
+                print("Expansion ", expansion)
+            out_srgb *= expansion
+            print(f"Brightness compressed {compression * expansion} to avoid clipping")
+    if clipped:
+        print("Brightness adjusted to avoid clipping")
         if srgb_max > 0 and srgb_max < 1:
             out_srgb *= 1 / srgb_max
-            print("Brightness adjusted to avoid clipping")
     out_srgb *= 65535
     out_img = out_srgb.astype(np.uint16)
 
